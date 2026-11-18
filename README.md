@@ -9,7 +9,7 @@ out, opens the Jira release and the ServiceNow change, keeps the release notes a
 current — and answers questions about all of it in chat. Nothing is created, changed or
 announced until a person approves.
 
-Sibling of [Kaval](../AWS%20AI/README.md), and built the same way.
+Sibling of [Kaval](https://github.com/roshanoommenreji/kaval), and built the same way.
 
 ```
  Jira ─┐                                                      ┌─▶ Jira fixVersion

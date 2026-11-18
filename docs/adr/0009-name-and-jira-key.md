@@ -17,6 +17,7 @@ keeps a whole ensemble of drummers in time. That is the job: many teams, one bea
 - Jira project key: **THL** (stories `THL-<n>`, branches `type/THL-<n>-slug`)
 - Python packages: `thalam_shared`, `thalam_agent`, `thalam_gateway`, …
 - Repository: `thalam`; the local folder stays `Release Agent` until git is initialised.
+  *Amended 2026-11-18: the folder is not renamed at all ([ADR-0011](0011-phase-0-shape.md)).*
 
 ## Consequences
 

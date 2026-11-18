@@ -1915,15 +1915,36 @@ git commit -m "feat: THL-1 CI (lint, test, secrets), CodeQL, Dependabot and the 
 
 ### Task 9: Publish the repo and protect `main` (STOP — Roshan's go: it creates a public repo and pushes)
 
+*Amended 2026-11-18 after the pre-publication review:* ADR-0011 is written before the push (four
+committed files cite it), the scan adds a default-rules cross-check, both workflows must be green
+before the ruleset goes on, and squash merges keep the no-reply email. Story key: `THL-19`.
+
 **Files:**
-- Modify: `docs/labs/00-foundations.md` (section 6 and 7 evidence)
+- Create: `docs/adr/0011-phase-0-shape.md` (step 1, before anything is public)
+- Modify: `docs/adr/0009-name-and-jira-key.md` (its folder note points at ADR-0011)
+- Modify: `docs/labs/00-foundations.md` (section 6 evidence; section 7 was filled in Task 3)
 
-- [ ] **Step 1: Full-history scan, last check before going public**
+- [ ] **Step 0 (Roshan): GitHub email privacy.** github.com → Settings → Emails: tick **Keep my
+  email addresses private** and **Block command line pushes that expose my email**. Without it, a
+  squash merge made on GitHub can carry the primary email. The merges below also pass
+  `--author-email` with the no-reply address, so both guards hold.
 
-Run: `make secrets-scan`
-Expected: `no leaks found`.
+- [ ] **Step 1: ADR-0011, committed on `main` before the push.** The decision to go public comes
+  before going public. Text: `docs/adr/0011-phase-0-shape.md` (written 2026-11-18).
 
-- [ ] **Step 2: Create the public repo and push** (after Roshan's go)
+- [ ] **Step 2: Full-history scan, last check before going public**
+
+```bash
+make secrets-scan
+printf '[extend]\nuseDefault = true\n' > /tmp/gitleaks-default.toml
+gitleaks git --config /tmp/gitleaks-default.toml --no-banner --redact .
+git log --all --format='%ae%n%ce' | sort -u
+```
+
+Expected: `no leaks found` twice (the repo's rules, then gitleaks' defaults alone, so the
+allowlist hides nothing), and only the `…@users.noreply.github.com` address.
+
+- [ ] **Step 3: Create the public repo and push** (after Roshan's go)
 
 ```bash
 gh repo create roshanoommenreji/thalam --public --source . --remote origin \
@@ -1933,16 +1954,22 @@ gh repo edit roshanoommenreji/thalam --enable-squash-merge --enable-merge-commit
   --enable-rebase-merge=false --delete-branch-on-merge
 ```
 
-- [ ] **Step 3: Wait for both workflows on `main` to go green**
+- [ ] **Step 4: Wait for both workflows on `main` to go green**
 
 ```bash
 gh run list --repo roshanoommenreji/thalam --branch main --limit 5
-gh run watch --repo roshanoommenreji/thalam --exit-status "$(gh run list --repo roshanoommenreji/thalam --workflow ci --branch main --limit 1 --json databaseId -q '.[0].databaseId')"
+for wf in ci.yml codeql.yml; do
+  gh run watch --repo roshanoommenreji/thalam --exit-status \
+    "$(gh run list --repo roshanoommenreji/thalam --workflow "$wf" --branch main --limit 1 --json databaseId -q '.[0].databaseId')"
+done
 ```
 
-Expected: `ci` and `codeql` both succeed. A failure is fixed before the ruleset goes on. While `main` is still unprotected, the fix may be pushed directly, but only this once.
+Expected: `ci` and `codeql` both succeed (if the list is empty, the runs have not registered yet;
+re-run it after a few seconds). A failure is fixed before the ruleset goes on: the ruleset
+requires the codeql checks, so a red codeql would block every PR. While `main` is still
+unprotected, the fix may be pushed directly, but only this once.
 
-- [ ] **Step 4: Apply the ruleset**
+- [ ] **Step 5: Apply the ruleset**
 
 ```bash
 gh api -X POST repos/roshanoommenreji/thalam/rulesets --input .github/rulesets/main.json -q '.id, .enforcement'
@@ -1951,43 +1978,51 @@ gh api repos/roshanoommenreji/thalam/rules/branches/main -q '.[].type'
 
 Expected: an id and `active`, then `deletion`, `non_fast_forward`, `required_linear_history`, `pull_request`, `required_status_checks`.
 
-- [ ] **Step 5: Prove a direct push to `main` is refused** (the negative case for R2)
+- [ ] **Step 6: Prove a direct push to `main` is refused** (the negative case for R2)
 
 ```bash
-git commit --allow-empty -m "chore: THL-1 ruleset probe"
+git commit --allow-empty -m "chore: THL-19 ruleset probe"
 git push origin main; echo "exit $?"
 git reset --soft HEAD~1
 ```
 
 Expected: `GH013: Repository rule violations found for refs/heads/main` and a non-zero exit. The reset removes only the empty probe commit.
 
-- [ ] **Step 6: Record evidence in Lab 00 sections 6 and 7, on a branch, through a PR** (this is also the first proof that the PR flow works)
+- [ ] **Step 7: Record evidence in Lab 00 section 6, on a branch, through a PR** (this is also the first proof that the PR flow works)
 
 ```bash
-git switch -c docs/THL-1-lab-00-repo-evidence
+git switch -c docs/THL-19-lab-00-repo-evidence
 gh repo view roshanoommenreji/thalam --json visibility,defaultBranchRef
 ```
 
-Replace the `_not run yet_` lines under R1, R2 and section 7 with the date, the commands and their outputs: visibility `PUBLIC`, default branch `main`, the ruleset rule types, the GH013 line, and the redacted gitleaks line from Task 3. Then:
+Replace the `_not run yet_` lines under R1 and R2 with the date, the commands and their outputs: visibility `PUBLIC`, default branch `main`, the ruleset rule types and the GH013 line. Then:
 
 ```bash
 git add docs/labs/00-foundations.md
-git commit -m "docs: THL-1 Lab 00 evidence for the repo, ruleset and secret block"
-git push -u origin docs/THL-1-lab-00-repo-evidence
-gh pr create --fill --base main
+git commit -m "docs: THL-19 Lab 00 evidence for the repo and the ruleset"
+git push -u origin docs/THL-19-lab-00-repo-evidence
+gh pr create --base main --title "docs: THL-19 Lab 00 evidence for the repo and the ruleset" \
+  --body "Evidence for SPEC-001-R1 and R2 in Lab 00 section 6."
 gh pr checks --watch
-gh pr merge --squash --delete-branch
+gh pr merge --squash --delete-branch \
+  --author-email 37763145+roshanoommenreji@users.noreply.github.com
 git switch main && git pull --ff-only
 ```
 
-Expected: all five required checks pass, and the squash merge succeeds.
+Give every PR an explicit conventional `--title`: with more than one commit, GitHub uses the title
+as the squash subject on `main`, and `--fill` would use the branch name instead.
+
+Expected: all five required checks pass, and the squash merge succeeds. Its author is the no-reply
+address; its committer is `noreply@github.com`, which is GitHub's own.
 
 ---
 
 ### Task 10: Sign-ups and the live sandbox check (STOP — Roshan: lab sections 2–5)
 
+Story key: `THL-20`.
+
 **Files:**
-- Modify: `docs/labs/00-foundations.md` (sections 1, 3, 5 and 8 evidence, and the expiry table)
+- Modify: `docs/labs/00-foundations.md` (sections 5 and 8 evidence, and the expiry table; sections 1 and 3 were filled in Tasks 0 and 7)
 
 - [ ] **Step 1:** Roshan follows lab sections 2–5 and fills in `.env` (copied from `.env.example`). Section 1 was Task 0.
 - [ ] **Step 2: Run the check**
@@ -1996,25 +2031,32 @@ Run: `make sandboxes`
 Expected: seven `PASS` lines and exit 0. What a failure usually means:
 - R10 read `HTTP 401`: the email or token is wrong, or the token was made on the planning site's account.
 - R10 write `HTTP 400 (... CAN write)`: the token has write scopes. Recreate it with read scopes only.
-- R11 write `HTTP 200 (... CAN write)`: `snc_read_only` is missing from `thalam.read`.
+- R11 write `HTTP 200 (... CAN write)`: `snc_read_only` is missing from `thalam.read`. If the
+  Roles tab does list it, the role is not blocking REST writes on this release: stop and record
+  it. (Not confirmed beforehand whether the refusal is a 403; either way the check fails closed.)
 - R12 `channels: general, thalam`: remove the app from `#general`.
 
-- [ ] **Step 3: Fill in Lab 00's evidence** for sections 1, 3 (the instance rules), 5 and 8 (paste the check output), plus the expiry table. Do it on branch `docs/THL-1-lab-00-sandbox-evidence`, through a PR as in Task 9 step 6.
+- [ ] **Step 3: Fill in Lab 00's evidence** for sections 5 and 8 (paste the check output), plus the expiry table. Do it on branch `docs/THL-20-lab-00-sandbox-evidence`, commit `docs: THL-20 Lab 00 evidence for the sandboxes`, through a PR as in Task 9 step 7 (explicit title, `--author-email`).
 
 ---
 
 ### Task 11: Close the phase — docs that follow, spec to Built
 
+Story key: `THL-21`.
+
 **Files:**
-- Create: `docs/adr/0011-phase-0-shape.md`
-- Modify: `ROADMAP.md`, `README.md`, `docs/journal/<date>.md`, `docs/specs/SPEC-001-phase-0-foundations.md`
+- Modify: `ROADMAP.md`, `README.md`, `docs/journal/<date>.md`, `docs/specs/SPEC-001-phase-0-foundations.md`, and `docs/adr/0011-phase-0-shape.md` only if it no longer matches what was built
 - Outside the repo: `vault/projects/thalam.md`, `vault/daily/<date>.md` (use the `obsidian` skill)
 
 - [ ] **Step 1: Branch**
 
-Run: `git switch -c docs/THL-1-phase-0-close`
+Run: `git switch -c docs/THL-21-phase-0-close`
 
-- [ ] **Step 2: Write `docs/adr/0011-phase-0-shape.md`**
+- [ ] **Step 2: Check ADR-0011 against what was built.** It was written in Task 9 step 1, before
+  the push (*amended 2026-11-18*; the draft text that stood here is now the file itself). Amend it
+  only if Tasks 9–10 changed a fact in it.
+
+<!-- First draft of ADR-0011, kept only as the plan's record; the file in docs/adr/ is authoritative.
 
 ```markdown
 # ADR-0011 — Phase 0 shape: public repo, two Jira sites, AWS guard moves to Phase 7
@@ -2064,8 +2106,12 @@ Phase 7 depends on the Anthropic console limit.
 **Revisit if:** the repo must hold something that cannot be public, or Thalam needs AWS before
 Phase 7.
 ```
+-->
 
 - [ ] **Step 3: Update `ROADMAP.md`**
+
+First, the planning-board line near the top links a claude.ai artifact that public readers cannot
+open: apply Roshan's call on it (keep, mark as private, or remove).
 
 Replace this block of Phase 0 lines (keep the lines above it unchanged):
 
@@ -2133,24 +2179,32 @@ Run: `uv run python scripts/dev/spec_coverage.py; echo "exit $?"`
 Expected: 13 rows, each with a "Cited by" or a "Live proof", and `exit 0`. If a row shows `—` in
 both, its proof is missing: fix that, not the check.
 
+The check counts a lab that names a requirement as its live proof, whether or not the evidence is
+filled in, so it passes today already. This gate is the one that can fail:
+
+Run: `grep -c '_not run yet_' docs/labs/00-foundations.md`
+Expected: `0`. Any other number means a live proof has no evidence yet, so SPEC-001 is not Built.
+
 - [ ] **Step 6: Journal entry** in `docs/journal/<today>.md` (append if the file exists): what was built, the three spec catches, the measurements, and next (SPEC-002).
 
 - [ ] **Step 7: Commit, PR, merge**
 
 ```bash
 git add docs ROADMAP.md README.md
-git commit -m "docs: THL-1 close Phase 0 (ADR-0011, ROADMAP, SPEC-001 Built)"
-git push -u origin docs/THL-1-phase-0-close
-gh pr create --fill --base main
+git commit -m "docs: THL-21 close Phase 0 (ROADMAP, README, SPEC-001 Built)"
+git push -u origin docs/THL-21-phase-0-close
+gh pr create --base main --title "docs: THL-21 close Phase 0 (ROADMAP, README, SPEC-001 Built)" \
+  --body "Phase 0 exit gate passed; SPEC-001 set to Built with its measurements."
 gh pr checks --watch
-gh pr merge --squash --delete-branch
+gh pr merge --squash --delete-branch \
+  --author-email 37763145+roshanoommenreji@users.noreply.github.com
 git switch main && git pull --ff-only
 ```
 
 Expected: all required checks pass. The `test` job's summary shows the coverage table, and Built
 is now enforced.
 
-- [ ] **Step 8: Vault** (invoke the `obsidian` skill). Update `vault/projects/thalam.md` (status: Phase 0 done, the repo URL, next SPEC-002, bump `updated:`), append to `vault/daily/<today>.md`, and add ADR-0011's three calls to `vault/decisions/README.md`. Move the Phase 0 epic `THL-1` to Done in Jira.
+- [ ] **Step 8: Vault** (invoke the `obsidian` skill). Update `vault/projects/thalam.md` (status: Phase 0 done, the repo URL, next SPEC-002, bump `updated:`), append to `vault/daily/<today>.md`, and add ADR-0011's three calls to `vault/decisions/README.md`. Move story `THL-21`, then the Phase 0 epic `THL-1`, to Done in Jira.
 
 ---
 
@@ -2160,3 +2214,22 @@ is now enforced.
 - **Placeholders:** none in code. `_not run yet_` lines in Lab 00 are filled with real evidence in T9–T10, before Built.
 - **Names checked across tasks:** `problems`, `check`, `main`, `ROOT`, `run_all`, `render`, `load_env`, `Result`, the job names `lint`/`test`/`secrets`/`codeql (python)`/`codeql (actions)` (ci.yml, codeql.yml, ruleset), and the env keys (`.env.example`, `check_sandboxes.py`, Lab 00).
 - **Test counts:** bootstrap 1, commits 21 (8 + 1 + 11 + 1), coverage 15 (+1 in T8), sandboxes 10. That is 47 after T6 and 48 after T8.
+
+## As built (2026-11-18, after Tasks 0–8 and the pre-publication review)
+
+The code blocks above are the first drafts. Per-task spec and quality reviews changed the code, so
+**the repository is authoritative** where they differ. The changes, in short:
+
+- 126 tests, not 48: commits 29, coverage 71 (one runs the check on the real repo), sandboxes 25,
+  bootstrap 1.
+- Makefile recipes run through `uv run`, and `secrets-scan` fails clearly if gitleaks is missing.
+- The ruleset pins each required check to the GitHub Actions app (`integration_id` 15368).
+- `check_commits.py` requires the story branch's **own** key (SPEC-001-R5's "that THL key"), not
+  any THL key.
+- The coverage check fails closed on more cases (malformed rows, empty specs folder, weak or
+  unsafe proof paths, tags that are not line-start comments).
+- The sandbox check never follows redirects and reads a `.env` with a BOM, `export` and inline
+  comments.
+- gitleaks' Atlassian rule catches a site name with or without `.net` and with an escaped dot.
+  The review found the planning site's name in Task 1 step 7's `grep` command, in that form; the
+  history was rewritten before the first push.

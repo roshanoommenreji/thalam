@@ -7,7 +7,7 @@
 ## Context
 
 Kaval's epic KAV-120 (FS-9 in Kaval's
-[future scope](../../../AWS%20AI/docs/future-scope.md)) plans a measured trial of AI-DLC, AWS's
+[future scope](https://github.com/roshanoommenreji/kaval/blob/main/docs/future-scope.md)) plans a measured trial of AI-DLC, AWS's
 *AI-Driven Development Life Cycle*: the AI drafts a plan, asks clarifying questions, and builds only
 after a person approves, across **Inception → Construction → Operations**. Kaval's own write-up says a
 brand-new system is the case that deserves the full workflow ("Petti" is the named pilot).
