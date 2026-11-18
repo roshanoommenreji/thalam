@@ -80,11 +80,42 @@ is the control.
 
 ## 6. Repository and ruleset — SPEC-001-R1, SPEC-001-R2
 
-Done in plan Task 9. Commands and outputs go here.
+Done in plan Task 9. Before the first push: `make secrets-scan` and a second full-history scan
+with gitleaks' default rules alone (so the allowlist hides nothing) both gave `no leaks found`,
+and every author and committer was the GitHub no-reply address.
 
-**Evidence R1:** _not run yet_ (`gh repo view roshanoommenreji/thalam --json visibility,defaultBranchRef`)
+```bash
+gh repo create <you>/thalam --public --source . --remote origin --description "..."
+git push -u origin main
+gh repo edit <you>/thalam --enable-squash-merge --enable-merge-commit=false \
+  --enable-rebase-merge=false --delete-branch-on-merge
+# wait for the ci and codeql runs on main to succeed, then:
+gh api -X POST repos/<you>/thalam/rulesets --input .github/rulesets/main.json
+```
 
-**Evidence R2:** _not run yet_ (ruleset id and rules from `gh api`, plus the refused direct push)
+Apply the ruleset only after both workflows are green on `main`, and check the names first:
+`gh api repos/<you>/thalam/commits/<sha>/check-runs` must list `lint`, `test`, `secrets`,
+`codeql (python)` and `codeql (actions)` from app 15368 (GitHub Actions), exactly as the ruleset
+requires them. A name that never appears would block every pull request.
+
+**Evidence R1 (2026-11-18):** `gh repo view --json visibility,defaultBranchRef` gave visibility
+`PUBLIC`, default branch `main`. GitHub detected the MIT licence.
+
+**Evidence R2 (2026-11-18):** the first `ci` and `codeql` runs on `main` succeeded, and the
+commit's check runs were exactly the five required names, all from app 15368. Ruleset `main`:
+`active`, target the default branch, 0 bypass actors. `gh api .../rules/branches/main` lists
+`deletion`, `non_fast_forward`, `required_linear_history`, `pull_request` (0 approvals, squash
+only) and `required_status_checks` (`lint`, `test`, `secrets`, `codeql (python)`,
+`codeql (actions)`). An empty probe commit pushed straight to `main` was refused, exit 1:
+
+```
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Changes must be made through a pull request.
+remote: - 5 of 5 required status checks are expected.
+```
+
+The probe was removed with `git reset --soft HEAD~1`. This evidence went in through the first
+pull request, which is the PR flow's own proof.
 
 ## 7. A planted fake secret is blocked — SPEC-001-R6
 
