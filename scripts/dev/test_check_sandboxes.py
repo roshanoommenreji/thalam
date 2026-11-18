@@ -3,11 +3,15 @@
 
 from __future__ import annotations
 
+import http.client
+import http.server
+import threading
 import urllib.error
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
-from check_sandboxes import Result, load_env, render, run_all
+from check_sandboxes import Result, _is_set, _send, load_env, render, run_all
 
 # xxxx- values: gitleaks' allowlist clears them, and none is a real credential.
 ENV = {
@@ -21,15 +25,17 @@ ENV = {
     "ANTHROPIC_API_KEY": "xxxx-anthropic-key",
 }
 
+SYS_ID = "0123456789abcdef0123456789abcdef"
+PATCH_PATH = f"/api/now/table/change_request/{SYS_ID}"
 Answer = tuple[int, object] | Exception
 READ_ONLY: dict[tuple[str, str], Answer] = {
     ("GET", "/project/search"): (200, {"values": []}),
     ("POST", "/rest/api/3/issue"): (401, {"message": "Unauthorized; scope does not match"}),
     ("GET", "/api/now/table/change_request?"): (
         200,
-        {"result": [{"sys_id": "abc", "short_description": "Demo change"}]},
+        {"result": [{"sys_id": SYS_ID, "short_description": "Demo change"}]},
     ),
-    ("PATCH", "/api/now/table/change_request/abc"): (403, {"error": {"message": "denied"}}),
+    ("PATCH", PATCH_PATH): (403, {"error": {"message": "denied"}}),
     ("POST", "slack.com/api/auth.test"): (200, {"ok": True}),
     ("GET", "slack.com/api/users.conversations"): (
         200,
@@ -77,7 +83,7 @@ def test_a_jira_token_that_can_write_fails() -> None:
 
 def test_a_servicenow_user_that_can_write_fails() -> None:
     results = run_all(
-        ENV, FakeHttp({("PATCH", "/api/now/table/change_request/abc"): (200, {"result": {}})})
+        ENV, FakeHttp({("PATCH", PATCH_PATH): (200, {"result": {}})})
     )
     write = _one(results, "servicenow", "refused")
     assert not write.ok
@@ -180,7 +186,7 @@ def test_a_jira_server_error_on_the_write_probe_fails_without_claiming_write_acc
 def test_a_servicenow_server_error_on_the_write_probe_fails_without_claiming_write_access() -> (
     None
 ):
-    route = ("PATCH", "/api/now/table/change_request/abc")
+    route = ("PATCH", PATCH_PATH)
     results = run_all(ENV, FakeHttp({route: (500, None)}))
     write = _one(results, "servicenow", "refused")
     assert not write.ok
@@ -189,10 +195,121 @@ def test_a_servicenow_server_error_on_the_write_probe_fails_without_claiming_wri
 
 def test_servicenow_row_without_a_short_description_is_never_patched() -> None:
     route = ("GET", "/api/now/table/change_request?")
-    fake = FakeHttp({route: (200, {"result": [{"sys_id": "abc"}]})})
+    fake = FakeHttp({route: (200, {"result": [{"sys_id": SYS_ID}]})})
     results = run_all(ENV, fake)
     assert _one(results, "servicenow", "read change_request").ok
     write = _one(results, "servicenow", "refused")
     assert not write.ok
     assert write.detail == "skipped: the row has no short_description to echo back"
     assert not any(method == "PATCH" for method, _ in fake.calls)
+
+
+def test_load_env_reads_a_utf8_bom_and_an_export_prefix(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_bytes(b"\xef\xbb\xbfFIRST=1\nexport SECOND=2\nexport   THIRD = 3\n")
+    assert load_env(env_file) == {"FIRST": "1", "SECOND": "2", "THIRD": "3"}
+
+
+def test_a_jira_read_that_fails_skips_the_write_probe() -> None:
+    fake = FakeHttp({("GET", "/project/search"): (401, None)})
+    results = run_all(ENV, fake)
+    write = _one(results, "jira", "refused")
+    assert not write.ok
+    assert write.detail == "skipped: read failed (HTTP 401)"
+    assert not any(method == "POST" and "/issue" in url for method, url in fake.calls)
+
+
+def test_a_bug_or_a_bad_request_in_one_group_leaks_nothing_and_spares_the_others() -> None:
+    leak = "bad /path/with-secret-host"
+    invalid = http.client.InvalidURL(leak)
+    results = run_all(ENV, FakeHttp({("GET", "/project/search"): invalid}))
+    assert _one(results, "R10").detail == "unreachable (InvalidURL)"
+    assert all(r.ok for r in results if not r.name.startswith("R10"))
+    bug = RuntimeError("xxxx-anthropic-key blew up")
+    results = run_all(ENV, FakeHttp({("GET", "api.anthropic.com/v1/models"): bug}))
+    assert _one(results, "R13").detail == "error (RuntimeError)"
+    assert len([r for r in results if r.ok]) == 6
+    text = "\n".join(render(results))
+    assert leak not in text and "blew up" not in text
+    for value in ENV.values():
+        assert value not in text
+
+
+def test_only_a_whole_angle_bracket_value_counts_as_a_placeholder() -> None:
+    assert not _is_set(None)
+    assert not _is_set("")
+    assert not _is_set("Placeholder")
+    assert not _is_set("<cloud-id>")
+    assert not _is_set("https://<your-pdi>.service-now.com")
+    assert _is_set("pa<ss>word")
+    assert _is_set("xxxx<yz")
+    assert _is_set("https://pdi.example.test")
+
+
+def test_a_slack_error_is_printed_only_if_it_looks_like_a_slack_error_code() -> None:
+    route = ("POST", "slack.com/api/auth.test")
+    bad = FakeHttp({route: (200, {"ok": False, "error": "\x1b[31mred\x1b[0m"})})
+    assert _one(run_all(ENV, bad), "R12", "auth.test").detail == "HTTP 200, error ?"
+    good = FakeHttp({route: (200, {"ok": False, "error": "invalid_auth"})})
+    assert _one(run_all(ENV, good), "R12", "auth.test").detail == "HTTP 200, error invalid_auth"
+
+
+def test_servicenow_row_with_an_odd_sys_id_is_never_patched() -> None:
+    route = ("GET", "/api/now/table/change_request?")
+    row = {"sys_id": "../../x", "short_description": "Demo change"}
+    fake = FakeHttp({route: (200, {"result": [row]})})
+    write = _one(run_all(ENV, fake), "servicenow", "refused")
+    assert not write.ok
+    assert write.detail == "skipped: the row's sys_id is not a valid id"
+    assert not any(method == "PATCH" for method, _ in fake.calls)
+
+
+class _Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802 (name set by BaseHTTPRequestHandler)
+        seen: list[tuple[str, str | None]] = self.server.seen  # type: ignore[attr-defined]
+        seen.append((self.path, self.headers.get("User-Agent")))
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", f"http://{self.headers['Host']}/target")
+            self.end_headers()
+            return
+        body = b'{"error": "boom"}' if self.path == "/json500" else b"<html>not json</html>"
+        self.send_response(500 if self.path == "/json500" else 200)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        pass
+
+
+@contextmanager
+def _local_server() -> Iterator[tuple[str, list[tuple[str, str | None]]]]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    seen: list[tuple[str, str | None]] = []
+    server.seen = seen  # type: ignore[attr-defined]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", seen
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_a_redirect_is_returned_as_an_answer_and_never_followed() -> None:
+    with _local_server() as (base, seen):
+        status, _ = _send("GET", f"{base}/redirect", {"Authorization": "xxxx-secret"}, None)
+    assert status == 302
+    assert [path for path, _ in seen] == ["/redirect"]
+
+
+def test_an_http_error_with_a_json_body_is_an_answer() -> None:
+    with _local_server() as (base, seen):
+        assert _send("GET", f"{base}/json500", {}, None) == (500, {"error": "boom"})
+    assert seen == [("/json500", "thalam-check-sandboxes")]
+
+
+def test_a_body_that_is_not_json_gives_no_payload() -> None:
+    with _local_server() as (base, _):
+        assert _send("GET", f"{base}/html", {}, None) == (200, None)

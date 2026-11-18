@@ -25,6 +25,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from http.client import HTTPException, HTTPMessage
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,12 +45,12 @@ def load_env(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     if not path.is_file():
         return values
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():  # PowerShell 5.1 adds a BOM
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        values[key.strip()] = _clean_value(value)
+        values[re.sub(r"^export\s+", "", key.strip())] = _clean_value(value)
     return values
 
 
@@ -63,24 +64,43 @@ def _clean_value(raw: str) -> str:
 
 
 def _is_set(value: str | None) -> bool:
-    if not value:
+    """Empty, 'placeholder', a whole <...> or an https://<... address is not a real setting."""
+    if not value or "placeholder" in value.lower():
         return False
-    return "placeholder" not in value.lower() and "<" not in value
+    return not (re.fullmatch(r"<[^<>]*>", value) or value.startswith("https://<"))
 
 
 def _basic(user: str, secret: str) -> str:
     return "Basic " + base64.b64encode(f"{user}:{secret}".encode()).decode()
 
 
-def urllib_http(
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib would forward the Authorization header to wherever a 3xx points. Never follow."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> None:
+        return None
+
+
+def _send(
     method: str, url: str, headers: Mapping[str, str], body: bytes | None
 ) -> tuple[int, object]:
-    """The real transport: (status, parsed JSON or None). HTTP errors are answers, not raises."""
-    if not url.startswith("https://"):
-        raise ValueError("only https:// addresses are called")
-    request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))
+    """Send one request: (status, parsed JSON or None). HTTP errors and 3xx are answers."""
+    request = urllib.request.Request(
+        url,
+        data=body,
+        method=method,
+        headers={**headers, "User-Agent": "thalam-check-sandboxes"},
+    )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.build_opener(_NoRedirect).open(request, timeout=20) as response:
             status, raw = response.status, response.read()
     except urllib.error.HTTPError as err:
         status, raw = err.code, err.read()
@@ -89,6 +109,15 @@ def urllib_http(
     except ValueError:
         payload = None
     return status, payload
+
+
+def urllib_http(
+    method: str, url: str, headers: Mapping[str, str], body: bytes | None
+) -> tuple[int, object]:
+    """The real transport. Only https:// addresses are called."""
+    if not url.startswith("https://"):
+        raise ValueError("only https:// addresses are called")
+    return _send(method, url, headers, body)
 
 
 def check_jira(env: Mapping[str, str], http: Http) -> list[Result]:
@@ -101,14 +130,12 @@ def check_jira(env: Mapping[str, str], http: Http) -> list[Result]:
     }
     status, _ = http("GET", f"{base}/project/search?maxResults=1", headers, None)
     read = Result("R10 jira sandbox: read with the read token", status == 200, f"HTTP {status}")
+    write_name = "R10 jira sandbox: a write with the read token is refused"
+    if status != 200:
+        return [read, Result(write_name, False, f"skipped: read failed (HTTP {status})")]
     status, _ = http("POST", f"{base}/issue", headers, b'{"fields": {}}')
     hint = " (400 means this token CAN write)" if status == 400 else ""
-    write = Result(
-        "R10 jira sandbox: a write with the read token is refused",
-        status in REFUSED,
-        f"HTTP {status}{hint}",
-    )
-    return [read, write]
+    return [read, Result(write_name, status in REFUSED, f"HTTP {status}{hint}")]
 
 
 def check_servicenow(env: Mapping[str, str], http: Http) -> list[Result]:
@@ -136,7 +163,10 @@ def check_servicenow(env: Mapping[str, str], http: Http) -> list[Result]:
         skipped = "skipped: the row has no short_description to echo back"
         return [read, Result(write_name, False, skipped)]
     body = json.dumps({"short_description": echo}).encode()
-    sys_id = first.get("sys_id", "")
+    sys_id = first.get("sys_id")
+    if not isinstance(sys_id, str) or not re.fullmatch(r"[0-9a-f]{32}", sys_id):
+        skipped = "skipped: the row's sys_id is not a valid id"
+        return [read, Result(write_name, False, skipped)]
     status, _ = http("PATCH", f"{base}/api/now/table/change_request/{sys_id}", headers, body)
     hint = " (2xx means this user CAN write)" if 200 <= status < 300 else ""
     return [read, Result(write_name, status in REFUSED, f"HTTP {status}{hint}")]
@@ -144,7 +174,9 @@ def check_servicenow(env: Mapping[str, str], http: Http) -> list[Result]:
 
 def _slack_error(payload: object) -> str:
     if isinstance(payload, dict) and payload.get("ok") is not True:
-        return f", error {payload.get('error', '?')}"
+        error = payload.get("error")
+        safe = isinstance(error, str) and re.fullmatch(r"[a-z_]{1,40}", error)
+        return f", error {error if safe else '?'}"
     return ""
 
 
@@ -196,8 +228,10 @@ def run_all(env: Mapping[str, str], http: Http) -> list[Result]:
             continue
         try:
             results.extend(check(env, http))
-        except (OSError, ValueError) as err:  # URLError and timeouts are OSErrors
+        except (OSError, ValueError, HTTPException) as err:  # URLError is an OSError
             results.append(Result(name, False, f"unreachable ({type(err).__name__})"))
+        except Exception as err:  # backstop: one group's bug must not hide the others
+            results.append(Result(name, False, f"error ({type(err).__name__})"))  # type only
     return results
 
 
