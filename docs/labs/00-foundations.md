@@ -123,7 +123,7 @@ can be pasted here. What a failure usually means:
 | ServiceNow `thalam.read` | the instance | password policy of the instance | |
 | ServiceNow instance | developer.servicenow.com | reclaimed after 10 days without a sign-in to it (once 90+ days old) | sign in weekly |
 | Slack bot token | api.slack.com/apps | does not expire; revoke by uninstalling | |
-| Anthropic `thalam-dev` | console.anthropic.com | no expiry; revoke in the console | |
+| Anthropic `thalam-dev` | platform.claude.com, workspace `thalam` | no expiry; revoke in the console | |
 
 ## If a sandbox is down or reclaimed
 
