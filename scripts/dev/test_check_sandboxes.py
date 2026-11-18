@@ -7,6 +7,7 @@ import http.client
 import http.server
 import threading
 import urllib.error
+import urllib.parse
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -121,7 +122,9 @@ def test_a_missing_or_placeholder_setting_fails_its_group_without_calling_it() -
     slack = _one(results, "R12")
     assert not slack.ok and slack.detail == "not set in .env: SLACK_BOT_TOKEN"
     assert not _one(results, "R13").ok
-    assert not any("slack.com" in url or "anthropic.com" in url for _, url in fake.calls)
+    hosts = {urllib.parse.urlsplit(url).hostname or "" for _, url in fake.calls}
+    skipped = ("slack.com", "anthropic.com")
+    assert not [h for h in hosts for d in skipped if h == d or h.endswith("." + d)], hosts
 
 
 def test_an_unreachable_sandbox_fails_alone() -> None:
@@ -282,8 +285,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         assert isinstance(server, _Server)
         server.seen.append((self.path, self.headers.get("User-Agent")))
         if self.path == "/redirect":
+            # Back to this same server (its own port, never the request's Host header), so a
+            # followed redirect would show up in `seen` as /target.
             self.send_response(302)
-            self.send_header("Location", f"http://{self.headers['Host']}/target")
+            self.send_header("Location", f"http://127.0.0.1:{server.server_port}/target")
             self.end_headers()
             return
         body = b'{"error": "boom"}' if self.path == "/json500" else b"<html>not json</html>"
