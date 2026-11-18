@@ -28,12 +28,15 @@ regex = '''arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:'''
 tags = ["aws", "identifier"]
 
 # CLAUDE.md rule 6. A placeholder such as <your-site>.atlassian.net does not match, because the
-# character before the dot is `>`, which is not a host character.
+# character before the dot is `>`, which is not a host character. The site name is caught with or
+# without `.net` and with a regex-escaped dot (`name\.atlassian`, as in a grep command). Atlassian's
+# own hosts (api., id., developer.atlassian.com) do not match: `.atlassian` followed by `.com` is
+# neither `.net` nor the end of the name.
 [[rules]]
 id = "real-atlassian-site"
 description = "A real Atlassian site address; write <your-site>.atlassian.net instead"
-regex = '''(?i)\b[a-z0-9][a-z0-9-]*\.atlassian\.net\b'''
-keywords = ["atlassian.net"]
+regex = '''(?i)\b[a-z0-9][a-z0-9-]*\\?\.atlassian(?:\\?\.net\b|[^.a-z0-9-]|$)'''
+keywords = ["atlassian"]
 tags = ["identifier", "rule-6"]
 
 [[rules]]
