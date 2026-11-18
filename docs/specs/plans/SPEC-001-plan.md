@@ -44,7 +44,7 @@
 
 This gives the commits a real `THL` key. It is lab step 1 (SPEC-001-R9).
 
-- [ ] **Step 1:** On your existing Jira site: Projects → Create project → team-managed, name **Thalam**, key **THL**. If `THL` is taken, use `THLM` (ADR-0009) and replace `THL` throughout this plan.
+- [ ] **Step 1:** On your existing Jira site: sidebar → Spaces → **Create space** (Jira Cloud renamed projects to spaces in 2025) → Kanban template → **team-managed**, name **Thalam**, key **THL**. Type the key yourself and check it before Create: on Kaval the wizard produced `SCRUM`, not `KAV` (Kaval journal 2026-09-14). If `THL` is taken, use `THLM` (ADR-0009) and replace `THL` throughout this plan. Before Step 2, make sure the space is empty; sample work items use up key numbers.
 - [ ] **Step 2:** Create nine epics, in this order, so their keys follow the phases: `Phase 0 — Foundations`, `Phase 1 — The release graph, local`, `Phase 2 — Read-only chat agent`, `Phase 3 — Proposals, policy, approval, executor`, `Phase 4 — Pre-release readiness gate`, `Phase 5 — Release notes and calendar`, `Phase 6 — Post-release verification`, `Phase 7 — Kubernetes and AWS`, `Phase 8 — Harden and publish`.
 - [ ] **Step 3:** Confirm that Settings → User management lists no bot account on this site.
 - [ ] **Step 4:** Tell the session the Phase 0 epic's key (expected `THL-1`).
@@ -1558,8 +1558,9 @@ a stranger can repeat it from zero. **Never write a real site address, tenant ID
 
 ## 1. Jira planning project — SPEC-001-R9
 
-1. On your existing Jira site: Projects → Create project → team-managed, name **Thalam**, key
-   **THL** (`THLM` if taken, ADR-0009).
+1. On your existing Jira site: sidebar → Spaces → **Create space** → Kanban → team-managed, name
+   **Thalam**, key **THL** (`THLM` if taken, ADR-0009). Type the key; the wizard may suggest
+   another.
 2. Create one epic per roadmap phase, Phase 0 first, so the Phase 0 epic is `THL-1`.
 3. Settings → User management: confirm no bot account exists on this site. Bots live only on
    the sandbox site (section 2, ADR-0011).
