@@ -3,7 +3,8 @@
 Same shape as Kaval's: phases are sequential and gated, every phase ends in something
 demonstrable, and every phase can be paused without lost state.
 
-Planning board: [Thalam roadmap whiteboard](https://claude.ai/artifact/K2v17EqdFVgx68bbCowVUA) — this file is the record; the board is for moving things around. When they disagree, update this file.
+This file is the record. The Jira board (`THL`) and any planning board follow it; when they
+disagree, update this file.
 
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 

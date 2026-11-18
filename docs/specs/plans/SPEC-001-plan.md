@@ -2110,8 +2110,8 @@ Phase 7.
 
 - [ ] **Step 3: Update `ROADMAP.md`**
 
-First, the planning-board line near the top links a claude.ai artifact that public readers cannot
-open: apply Roshan's call on it (keep, mark as private, or remove).
+(The planning-board line near the top, which linked a claude.ai artifact public readers cannot
+open, was already replaced on 2026-11-18 by Roshan's call; nothing to do there.)
 
 Replace this block of Phase 0 lines (keep the lines above it unchanged):
 
@@ -2179,11 +2179,12 @@ Run: `uv run python scripts/dev/spec_coverage.py; echo "exit $?"`
 Expected: 13 rows, each with a "Cited by" or a "Live proof", and `exit 0`. If a row shows `—` in
 both, its proof is missing: fix that, not the check.
 
-The check counts a lab that names a requirement as its live proof, whether or not the evidence is
-filled in, so it passes today already. This gate is the one that can fail:
+Since R8's amendment (2026-11-18) the check also fails a Built spec whose lab still says
+`_not run yet_`, so an `exit 1` naming `docs/labs/00-foundations.md` means Lab 00's evidence is
+not all recorded: finish Tasks 9–10 first. To see what is left before flipping the status:
 
-Run: `grep -c '_not run yet_' docs/labs/00-foundations.md`
-Expected: `0`. Any other number means a live proof has no evidence yet, so SPEC-001 is not Built.
+Run: `grep -n '_not run yet_' docs/labs/00-foundations.md`
+Expected: no output.
 
 - [ ] **Step 6: Journal entry** in `docs/journal/<today>.md` (append if the file exists): what was built, the three spec catches, the measurements, and next (SPEC-002).
 
@@ -2220,8 +2221,9 @@ is now enforced.
 The code blocks above are the first drafts. Per-task spec and quality reviews changed the code, so
 **the repository is authoritative** where they differ. The changes, in short:
 
-- 126 tests, not 48: commits 29, coverage 71 (one runs the check on the real repo), sandboxes 25,
+- 131 tests, not 48: commits 29, coverage 76 (one runs the check on the real repo), sandboxes 25,
   bootstrap 1.
+- R8 amended: a Built or Amended spec fails while a lab it names still says `_not run yet_`.
 - Makefile recipes run through `uv run`, and `secrets-scan` fails clearly if gitleaks is missing.
 - The ruleset pins each required check to the GitHub Actions app (`integration_id` 15368).
 - `check_commits.py` requires the story branch's **own** key (SPEC-001-R5's "that THL key"), not

@@ -174,8 +174,3 @@ Copied from Kaval. For anything non-trivial, write down before building:
 - When something is uncertain (a price, an API shape, a library version), **verify it**.
 - Plain-language recap at every story and phase boundary, unprompted.
 - Kaval is read for patterns, never edited from this repo.
-
-## Vault
-
-This repo sits under `Desktop\Claude`, so the knowledge vault applies. Keep
-`vault/projects/thalam.md` current and append to `vault/daily/YYYY-MM-DD.md` at wrap-up.

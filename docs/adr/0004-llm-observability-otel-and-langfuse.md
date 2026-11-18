@@ -33,5 +33,5 @@ Kaval's rule is self-host where it is cheap and sensible, and stay portable.
 **Easier:** one trace per conversation from input guard to executor; cost per release.
 **Harder:** another stateful system to run and back up.
 **Cost:** $0 locally; self-hosted cost to be measured in Phase 7.
-**Revisit if:** LangSmith's hosted tier is needed for a job interview story, or Langfuse's
-licence changes after the acquisition.
+**Revisit if:** a hosted LangSmith project becomes worth its cost (for example, to share traces
+with people outside the project), or Langfuse's licence changes after the acquisition.
