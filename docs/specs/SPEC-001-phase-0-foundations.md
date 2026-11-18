@@ -61,7 +61,8 @@ template): the Status line and every `| SPEC-NNN-Rn |` row. It looks for `covers
 `services/`, `scripts/`, `.github/`, `policy/` and `evals/`, whatever the comment syntax. Run as a
 command, it prints one row per requirement (cited by / live proof / missing), which is also the CI
 job summary. Its test runs it on the real repo and on small broken trees it builds in a temporary
-directory.
+directory. It also fails closed on a malformed row, an empty specs folder, a live proof outside
+docs/labs/, and a proof path outside the repo or naming a test the file does not contain.
 
 **`check_sandboxes.py` (R10–R13).** Reads `.env`, prints pass or fail per line, never prints a token
 or a site URL, keeps going when one sandbox is down. Run by hand in Phase 0; Phase 2 reuses it as a
