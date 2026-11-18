@@ -11,7 +11,8 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
-from check_sandboxes import Result, _is_set, _send, load_env, render, run_all
+import pytest
+from check_sandboxes import Result, _is_set, _send, load_env, render, run_all, urllib_http
 
 # xxxx- values: gitleaks' allowlist clears them, and none is a real credential.
 ENV = {
@@ -264,10 +265,22 @@ def test_servicenow_row_with_an_odd_sys_id_is_never_patched() -> None:
     assert not any(method == "PATCH" for method, _ in fake.calls)
 
 
+Seen = list[tuple[str, str | None]]
+
+
+class _Server(http.server.ThreadingHTTPServer):
+    """A local server that remembers every (path, User-Agent) it was asked for."""
+
+    def __init__(self) -> None:
+        super().__init__(("127.0.0.1", 0), _Handler)
+        self.seen: Seen = []
+
+
 class _Handler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802 (name set by BaseHTTPRequestHandler)
-        seen: list[tuple[str, str | None]] = self.server.seen  # type: ignore[attr-defined]
-        seen.append((self.path, self.headers.get("User-Agent")))
+    def _answer(self) -> None:
+        server = self.server
+        assert isinstance(server, _Server)
+        server.seen.append((self.path, self.headers.get("User-Agent")))
         if self.path == "/redirect":
             self.send_response(302)
             self.send_header("Location", f"http://{self.headers['Host']}/target")
@@ -278,19 +291,34 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self) -> None:  # noqa: N802 (name set by BaseHTTPRequestHandler)
+        self._answer()
+
+    def do_POST(self) -> None:  # noqa: N802
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self._answer()
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass
 
 
+@pytest.fixture(autouse=True)
+def _no_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local-server tests must reach 127.0.0.1 directly, whatever the machine's proxy says."""
+    proxies = ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+    for name in proxies:
+        monkeypatch.delenv(name, raising=False)
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(name, "127.0.0.1,localhost")
+
+
 @contextmanager
-def _local_server() -> Iterator[tuple[str, list[tuple[str, str | None]]]]:
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    seen: list[tuple[str, str | None]] = []
-    server.seen = seen  # type: ignore[attr-defined]
+def _local_server() -> Iterator[tuple[str, Seen]]:
+    server = _Server()
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{server.server_port}", seen
+        yield f"http://127.0.0.1:{server.server_port}", server.seen
     finally:
         server.shutdown()
         server.server_close()
@@ -313,3 +341,15 @@ def test_an_http_error_with_a_json_body_is_an_answer() -> None:
 def test_a_body_that_is_not_json_gives_no_payload() -> None:
     with _local_server() as (base, _):
         assert _send("GET", f"{base}/html", {}, None) == (200, None)
+
+
+def test_a_post_redirect_is_returned_as_an_answer_and_never_followed() -> None:
+    with _local_server() as (base, seen):
+        status, _ = _send("POST", f"{base}/redirect", {"Authorization": "xxxx-secret"}, b"{}")
+    assert status == 302
+    assert [path for path, _ in seen] == ["/redirect"]
+
+
+def test_the_real_transport_refuses_a_plain_http_address() -> None:
+    with pytest.raises(ValueError):
+        urllib_http("GET", "http://127.0.0.1/x", {}, None)
