@@ -144,3 +144,55 @@ def test_load_env_reads_values_and_skips_comments(tmp_path: Path) -> None:
     env_file.write_text('# a comment\n\nA=1\nB = "two"\nnot a setting\n', encoding="utf-8")
     assert load_env(env_file) == {"A": "1", "B": "two"}
     assert load_env(tmp_path / "missing.env") == {}
+
+
+def test_load_env_strips_inline_comments_but_keeps_quoted_and_embedded_hashes(
+    tmp_path: Path,
+) -> None:
+    site = "<your-sandbox>" + ".atlassian" + ".net"
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "A=abc   # note\n"
+        'B="x # y"   # trailing\n'
+        "C='p#q'\n"
+        "D=a#b\n"
+        "E=   # only a comment\n"
+        f"JIRA_SANDBOX_CLOUD_ID=1234abcd          # from https://{site}/_edge/tenant_info\n",
+        encoding="utf-8",
+    )
+    assert load_env(env_file) == {
+        "A": "abc",
+        "B": "x # y",
+        "C": "p#q",
+        "D": "a#b",
+        "E": "",
+        "JIRA_SANDBOX_CLOUD_ID": "1234abcd",
+    }
+
+
+def test_a_jira_server_error_on_the_write_probe_fails_without_claiming_write_access() -> None:
+    results = run_all(ENV, FakeHttp({("POST", "/rest/api/3/issue"): (500, None)}))
+    write = _one(results, "jira", "refused")
+    assert not write.ok
+    assert write.detail == "HTTP 500"
+
+
+def test_a_servicenow_server_error_on_the_write_probe_fails_without_claiming_write_access() -> (
+    None
+):
+    route = ("PATCH", "/api/now/table/change_request/abc")
+    results = run_all(ENV, FakeHttp({route: (500, None)}))
+    write = _one(results, "servicenow", "refused")
+    assert not write.ok
+    assert write.detail == "HTTP 500"
+
+
+def test_servicenow_row_without_a_short_description_is_never_patched() -> None:
+    route = ("GET", "/api/now/table/change_request?")
+    fake = FakeHttp({route: (200, {"result": [{"sys_id": "abc"}]})})
+    results = run_all(ENV, fake)
+    assert _one(results, "servicenow", "read change_request").ok
+    write = _one(results, "servicenow", "refused")
+    assert not write.ok
+    assert write.detail == "skipped: the row has no short_description to echo back"
+    assert not any(method == "PATCH" for method, _ in fake.calls)

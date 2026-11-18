@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -48,8 +49,17 @@ def load_env(path: Path) -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        values[key.strip()] = value.strip().strip("\"'")
+        values[key.strip()] = _clean_value(value)
     return values
+
+
+def _clean_value(raw: str) -> str:
+    """A quoted value runs to its closing quote; an unquoted one stops at ' #' (a comment)."""
+    value = raw.strip()
+    if value[:1] in ("\"", "'"):
+        end = value.find(value[0], 1)
+        return value[1:end] if end != -1 else value[1:]
+    return re.split(r"(?:^|\s)#", raw, maxsplit=1)[0].strip()
 
 
 def _is_set(value: str | None) -> bool:
@@ -92,7 +102,7 @@ def check_jira(env: Mapping[str, str], http: Http) -> list[Result]:
     status, _ = http("GET", f"{base}/project/search?maxResults=1", headers, None)
     read = Result("R10 jira sandbox: read with the read token", status == 200, f"HTTP {status}")
     status, _ = http("POST", f"{base}/issue", headers, b'{"fields": {}}')
-    hint = "" if status in REFUSED else " (400 means this token CAN write)"
+    hint = " (400 means this token CAN write)" if status == 400 else ""
     write = Result(
         "R10 jira sandbox: a write with the read token is refused",
         status in REFUSED,
@@ -121,10 +131,14 @@ def check_servicenow(env: Mapping[str, str], http: Http) -> list[Result]:
         why = f"HTTP {status}" + (", but no change_request row to probe" if status == 200 else "")
         return [Result(read_name, False, why), Result(write_name, False, "skipped: " + why)]
     read = Result(read_name, status == 200, f"HTTP {status}")
-    body = json.dumps({"short_description": first.get("short_description", "")}).encode()
+    echo = first.get("short_description")
+    if not isinstance(echo, str):
+        skipped = "skipped: the row has no short_description to echo back"
+        return [read, Result(write_name, False, skipped)]
+    body = json.dumps({"short_description": echo}).encode()
     sys_id = first.get("sys_id", "")
     status, _ = http("PATCH", f"{base}/api/now/table/change_request/{sys_id}", headers, body)
-    hint = "" if status in REFUSED else " (200 means this user CAN write)"
+    hint = " (2xx means this user CAN write)" if 200 <= status < 300 else ""
     return [read, Result(write_name, status in REFUSED, f"HTTP {status}{hint}")]
 
 
