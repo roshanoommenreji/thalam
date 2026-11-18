@@ -3,8 +3,11 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
-from check_commits import problems
+from check_commits import main, problems
 
 STORY = "feat/THL-1-foundations"
 
@@ -19,6 +22,8 @@ STORY = "feat/THL-1-foundations"
         "Merge pull request #2 from roshanoommenreji/feat/THL-1-foundations",
         "Merge branch 'feat/THL-2-release-graph'",
         'Revert "feat: THL-1 commit-msg hook"',
+        'Reapply "feat: THL-1 commit-msg hook"',
+        "feat: THL-1 hook\r\n\r\nbody written on Windows\r\n",
         "# Please enter the commit message\nchore: THL-1 tidy\n# comment line",
     ],
 )
@@ -55,3 +60,23 @@ def test_autosquash_allowed_locally_refused_in_ci() -> None:
     message = "fixup! feat: THL-1 hook"
     assert problems(message, STORY) == []
     assert problems(message, STORY, in_ci=True)
+
+
+def test_a_verbose_commit_diff_below_the_scissors_is_ignored() -> None:
+    message = (
+        "feat: THL-1 hook\n"
+        "# ------------------------ >8 ------------------------\n"
+        "# Do not modify or remove the line above.\n"
+        "diff --git a/x.py b/x.py\n"
+        "+ (`THL-1 #comment ...`, `#time`)\n"
+    )
+    assert problems(message, STORY) == []
+
+
+def test_main_reads_a_message_file_with_a_bom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    msg = tmp_path / "COMMIT_EDITMSG"
+    msg.write_text("feat: THL-1 hook\n", encoding="utf-8-sig")
+    monkeypatch.setattr(sys, "argv", ["check_commits.py", "--file", str(msg), "--branch", STORY])
+    assert main() == 0

@@ -39,14 +39,21 @@ KEY = re.compile(r"\bTHL-\d+\b")
 # A key followed, on the same line, by `#` and a letter: `#comment`, `#time`, `#done`.
 # `#1` (a PR number) doesn't count.
 SMART_COMMAND = re.compile(r"\bTHL-\d+\b[^\n]*?(?<![\w#])#[A-Za-z]")
-GENERATED = ("Merge ", 'Revert "')
+SCISSORS = re.compile(r"^# -+ >8 -+$")
+GENERATED = ("Merge ", 'Revert "', 'Reapply "')
 AUTOSQUASH = ("fixup! ", "squash! ", "amend! ")
 
 
 def problems(message: str, branch: str = "", *, in_ci: bool = False) -> list[str]:
     """Everything wrong with one commit message; empty means it passes."""
     # git drops `#` lines from an edited message; the hook sees them before it does.
-    lines = [ln for ln in message.splitlines() if not ln.startswith("#")]
+    # `git commit -v` appends the diff below a scissors line; none of it is the message.
+    lines: list[str] = []
+    for ln in message.splitlines():
+        if SCISSORS.match(ln):
+            break
+        if not ln.startswith("#"):
+            lines.append(ln)
     subject = next((ln for ln in lines if ln.strip()), "").rstrip()
     if not subject:
         return ["the message is empty"]
@@ -104,7 +111,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.file:
-        with open(args.file, encoding="utf-8") as fh:
+        with open(args.file, encoding="utf-8-sig", errors="replace") as fh:
             checked = [("this commit", fh.read())]
     else:
         checked = commits_in(args.range)
