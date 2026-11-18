@@ -1,0 +1,86 @@
+# CI: every pull request, and main after each merge (SPEC-001; copied from Kaval's ci.yml).
+# covers: SPEC-001-R4, SPEC-001-R6
+#
+# Supply-chain hygiene, as in Kaval: every third-party action is pinned to a full commit SHA (the
+# tag is a comment), the gitleaks binary is checked against the sha256 below, the token is
+# read-only, and no job reads a secret. Job names are short on purpose: the ruleset on main
+# requires `lint`, `test` and `secrets` by name (.github/rulesets/main.json).
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" # linux_x64
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the commit check sees every commit the PR adds
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked --all-extras
+      - run: make lint
+      # Values go through env, never straight into the script: a branch name is user input.
+      - name: commit messages
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: uv run python scripts/dev/check_commits.py --range "$BASE_SHA..$HEAD_SHA" --branch "$HEAD_REF"
+
+  test:
+    name: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - run: uv sync --locked --all-extras
+      - run: uv run pytest -ra
+      - name: spec coverage (job summary, SPEC-001-R8)
+        run: uv run python scripts/dev/spec_coverage.py
+
+  secrets:
+    name: secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the whole history: the repo is public, so history must be clean
+          persist-credentials: false
+      - name: install gitleaks (checksum-verified)
+        run: |
+          curl -fsSL --retry 5 --retry-all-errors -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum --check --strict
+          tar -xzf gitleaks.tgz gitleaks && rm gitleaks.tgz
+      - run: ./gitleaks git --config .gitleaks.toml --redact --no-banner .

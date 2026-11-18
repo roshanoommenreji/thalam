@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from spec_coverage import check, main
+from spec_coverage import ROOT, check, main
 
 # The scan of the real repository reads this file, and the fixture IDs below belong to no real
 # spec, so no line here may hold a tag: every tag is assembled at run time from this word.
@@ -548,3 +548,7 @@ def test_a_duplicate_id_across_two_spec_files_fails(tmp_path: Path) -> None:
         "services/a/test_a.py": "",
     })
     assert any("SPEC-900-R1" in p and "defined twice" in p for p in _problems(root))
+
+
+def test_the_real_repository_passes() -> None:
+    assert check(ROOT)[2] == []

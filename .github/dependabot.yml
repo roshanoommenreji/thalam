@@ -1,0 +1,20 @@
+# Dependabot opens weekly, grouped pull requests for outdated dependencies (SPEC-001-R7; copied
+# from Kaval). Each one goes through ci.yml and merges only when green. Not covered: the gitleaks
+# binary in ci.yml, whose version and sha256 are bumped together by hand.
+# covers: SPEC-001-R7
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: saturday }
+    groups:
+      actions: { patterns: ["*"] }
+    commit-message: { prefix: chore }
+
+  - package-ecosystem: uv # reads pyproject.toml and updates uv.lock
+    directory: /
+    schedule: { interval: weekly, day: saturday }
+    groups:
+      python: { patterns: ["*"] }
+    commit-message: { prefix: chore }
