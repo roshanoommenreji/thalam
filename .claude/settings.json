@@ -49,8 +49,8 @@
       "Bash(mypy:*)",
       "Bash(pytest:*)",
       "Bash(opa test:*)",
-      "Bash(gitleaks detect:*)",
-      "Bash(gitleaks protect:*)"
+      "Bash(gitleaks git:*)",
+      "Bash(gitleaks dir:*)"
     ],
     "ask": [
       "Bash(terraform apply:*)",

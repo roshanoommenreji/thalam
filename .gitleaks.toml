@@ -32,15 +32,23 @@ tags = ["aws", "identifier"]
 [[rules]]
 id = "real-atlassian-site"
 description = "A real Atlassian site address; write <your-site>.atlassian.net instead"
-regex = '''\b[a-z0-9][a-z0-9-]*\.atlassian\.net\b'''
+regex = '''(?i)\b[a-z0-9][a-z0-9-]*\.atlassian\.net\b'''
 keywords = ["atlassian.net"]
 tags = ["identifier", "rule-6"]
 
 [[rules]]
 id = "real-servicenow-instance"
 description = "A real ServiceNow instance address; write <your-pdi>.service-now.com instead"
-regex = '''\b[a-z0-9][a-z0-9-]*\.service-now\.com\b'''
+regex = '''(?i)\b[a-z0-9][a-z0-9-]*\.service-now\.com\b'''
 keywords = ["service-now.com"]
+tags = ["identifier", "rule-6"]
+
+# CLAUDE.md rule 6 also forbids tenant IDs: an Atlassian cloud ID is a UUID in api.atlassian.com URLs.
+[[rules]]
+id = "atlassian-cloud-id"
+description = "An Atlassian cloud ID (tenant) in an API address; keep it in .env as JIRA_SANDBOX_CLOUD_ID"
+regex = '''(?i)atlassian\.com/ex/(?:jira|confluence)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+keywords = ["atlassian.com/ex/"]
 tags = ["identifier", "rule-6"]
 
 # ─── allowlist ───────────────────────────────────────────────
@@ -50,7 +58,6 @@ description = "Placeholders and examples"
 
 paths = [
   '''\.gitleaks\.toml$''',
-  '''\.env\.example$''',
   '''.*\.tfvars\.example$''',
 ]
 
