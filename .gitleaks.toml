@@ -1,0 +1,64 @@
+# gitleaks configuration for Thalam (SPEC-001-R6).
+#
+# This repository is public from its first push (ADR-0011), so the HISTORY must be clean, not
+# just the working tree. Copied from Kaval's and trimmed. Two rules are added for CLAUDE.md
+# rule 6 (no real instance addresses), and docs are no longer exempt: a doc is where a real
+# address is most likely to be pasted.
+#
+#   gitleaks git --staged    the pre-commit hook (scripts/dev/install-hooks.sh)
+#   gitleaks git .           the whole history (CI's `secrets` job, `make secrets-scan`)
+#   gitleaks dir .           the working tree
+
+[extend]
+useDefault = true
+
+# ─── project-specific rules ──────────────────────────────────
+
+[[rules]]
+id = "aws-account-id"
+description = "AWS account ID in a committed file"
+regex = '''(?i)(aws_?account_?id|account[_-]?id)["'\s:=]+["']?([0-9]{12})["']?'''
+tags = ["aws", "identifier"]
+
+[[rules]]
+id = "aws-arn-with-account"
+description = "ARN containing a real 12-digit account ID"
+# re2 has no lookahead, so the 000000000000 placeholder is cleared by the allowlist below.
+regex = '''arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{12}:'''
+tags = ["aws", "identifier"]
+
+# CLAUDE.md rule 6. A placeholder such as <your-site>.atlassian.net does not match, because the
+# character before the dot is `>`, which is not a host character.
+[[rules]]
+id = "real-atlassian-site"
+description = "A real Atlassian site address; write <your-site>.atlassian.net instead"
+regex = '''\b[a-z0-9][a-z0-9-]*\.atlassian\.net\b'''
+keywords = ["atlassian.net"]
+tags = ["identifier", "rule-6"]
+
+[[rules]]
+id = "real-servicenow-instance"
+description = "A real ServiceNow instance address; write <your-pdi>.service-now.com instead"
+regex = '''\b[a-z0-9][a-z0-9-]*\.service-now\.com\b'''
+keywords = ["service-now.com"]
+tags = ["identifier", "rule-6"]
+
+# ─── allowlist ───────────────────────────────────────────────
+
+[allowlist]
+description = "Placeholders and examples"
+
+paths = [
+  '''\.gitleaks\.toml$''',
+  '''\.env\.example$''',
+  '''.*\.tfvars\.example$''',
+]
+
+regexes = [
+  '''000000000000''',                 # placeholder account ID
+  '''(?i)you@example\.com''',
+  '''(?i)change-?me''',
+  '''(?i)<[a-z_-]+>''',               # <your-key-here>
+  '''(?i)xxx+''',
+  '''(?i)placeholder''',
+]

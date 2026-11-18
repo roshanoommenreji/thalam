@@ -1,0 +1,86 @@
+# ─── secrets ───────────────────────────────────────────────
+# Anything here going public at v1. History must be clean, not just HEAD.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+credentials
+kubeconfig
+*.kubeconfig
+secrets.yaml
+secrets.yml
+!**/secrets.example.*
+
+# ─── terraform ─────────────────────────────────────────────
+.terraform/
+# .terraform.lock.hcl is intentionally NOT ignored -- it pins exact provider
+# versions for reproducibility, and Terraform's own init output recommends
+# committing it. Ignoring it was backwards; fixed 2026-09-15.
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+tfplan
+*.tfplan
+.build/
+
+# ─── python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ─── node / expo ───────────────────────────────────────────
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+
+# ─── helm ──────────────────────────────────────────────────
+charts/*.tgz
+deploy/charts/*/charts/
+deploy/charts/*/Chart.lock
+
+# ─── models (large, redownloadable) ────────────────────────
+*.gguf
+*.safetensors
+models/
+
+# ─── generated ─────────────────────────────────────────────
+# Regenerate with `make dashboard`. Not committed: it embeds a "days since"
+# figure that changes daily and would churn history for no benefit.
+docs/dashboard.html
+# The dashboard's saved copy of Jira's story list (KAV-145): rewritten on every run, and the
+# fallback when Jira cannot be read. Jira owns it; a committed copy would only go stale.
+docs/jira-stories.json
+
+# ─── local artifacts ───────────────────────────────────────
+*.log
+*.db
+*.sqlite3
+pgdata/
+.DS_Store
+Thumbs.db
+
+# ─── editors ───────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ─── claude code local overrides ───────────────────────────
+.claude/settings.local.json

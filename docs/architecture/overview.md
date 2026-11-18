@@ -1,0 +1,51 @@
+# Architecture overview
+
+Updated whenever a component is added, removed or rewired (Definition of Done, item 6).
+
+## Components
+
+```
+                 ┌────────────── read-only ──────────────┐
+ Jira ──┐        │                                       │
+ Git ───┤        ▼                                       │
+ CI/CD ─┼─▶ collector ─▶ Postgres ◀─ agent (LangGraph) ──┘ reads via read-only clients / MCP
+ Prom ──┤   (events)     + pgvector     │   graphs: chat, readiness, notes,
+ Kaval ─┘                               │           post_release_watch, cab_summary
+                                        │   guard: in → screen → model → out
+                                        ▼
+                                    proposals ─▶ policy (OPA) ─▶ auto / ask / never
+                                                                    │
+                               web chat ◀─ gateway (FastAPI) ─▶ Slack approval card
+                                                │ decision row
+                                                ▼
+                                            executor ─▶ Jira · ServiceNow · Confluence ·
+                                                │       calendar · Slack announcements
+                                                ▼
+                                    executions, outcomes ─▶ graph resumes (checkpoint)
+```
+
+## Core entities
+
+| Table | Meaning |
+|---|---|
+| `component` | a deployable service, from `catalog-info.yaml`; owner team |
+| `dependency` | component → component (runtime / API / data), with version constraint |
+| `release` | component + version + planned window + state |
+| `release_item` | Jira issues and PRs in that release |
+| `calendar_window` | freeze, blackout, maintenance windows |
+| `check`, `check_result` | readiness and post-release checks and their results |
+| `proposal` → `decision` → `execution` → `outcome` | Kaval's chain, unchanged |
+| `audit_event` | every guardrail verdict, tool call and decision |
+| LangGraph checkpoint tables | durable conversation and workflow state |
+
+## Release life cycle
+
+`planned → scoped → ready (checks pass) → change approved → deploying → verifying →
+released | rolled back`. Each arrow that touches an outside system is a proposal.
+
+## Trust boundaries
+
+1. Users → gateway (login, limits).
+2. Outside text → agent (guard layer 4).
+3. Agent → proposals (the only write).
+4. Executor → outside systems (scoped bot accounts, idempotency keys).
