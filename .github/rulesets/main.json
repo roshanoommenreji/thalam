@@ -24,11 +24,11 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "lint" },
-          { "context": "test" },
-          { "context": "secrets" },
-          { "context": "codeql (python)" },
-          { "context": "codeql (actions)" }
+          { "context": "lint", "integration_id": 15368 },
+          { "context": "test", "integration_id": 15368 },
+          { "context": "secrets", "integration_id": 15368 },
+          { "context": "codeql (python)", "integration_id": 15368 },
+          { "context": "codeql (actions)", "integration_id": 15368 }
         ]
       }
     }

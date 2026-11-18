@@ -43,7 +43,7 @@ any committed file (CLAUDE.md rule 6).
 | ID | Requirement | Proved by (test or live check) |
 |---|---|---|
 | SPEC-001-R1 | GitHub repo `thalam` exists, is public, default branch `main` | live: `docs/labs/00-foundations.md` |
-| SPEC-001-R2 | A ruleset on `main`: changes by PR only, required checks `lint`, `test`, `secrets`, `codeql` green, no force-push, no deletion, linear history, 0 required approvals (solo). A direct push to `main` is refused | live: `docs/labs/00-foundations.md` |
+| SPEC-001-R2 | A ruleset on `main`: changes by PR only, required checks `lint`, `test`, `secrets`, `codeql (python)`, `codeql (actions)` green, no force-push, no deletion, linear history, 0 required approvals (solo). A direct push to `main` is refused | live: `docs/labs/00-foundations.md` |
 | SPEC-001-R3 | `uv sync --locked` succeeds and the empty package `thalam_shared` imports and reports a version | `services/shared/tests/test_bootstrap.py` |
 | SPEC-001-R4 | ruff and `mypy --strict` run clean in the `lint` job | `.github/workflows/ci.yml` |
 | SPEC-001-R5 | Commit messages are conventional; on a story branch (`type/THL-<n>-slug`) the subject carries that THL key, and a message without it fails | `scripts/dev/test_check_commits.py` |

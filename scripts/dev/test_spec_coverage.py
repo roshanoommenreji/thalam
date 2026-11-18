@@ -47,6 +47,12 @@ def _problems(root: Path) -> list[str]:
     return check(root)[2]
 
 
+@pytest.fixture(autouse=True)
+def _no_job_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    # On CI, GITHUB_STEP_SUMMARY is set while pytest runs; fixture trees must not write to it.
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+
 PROOF = "`services/a/test_a.py`"
 NOTHING = "nothing proves it"
 
