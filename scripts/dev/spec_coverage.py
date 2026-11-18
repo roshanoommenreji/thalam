@@ -30,6 +30,7 @@ For every spec but a Retired one (its proof files may be gone), each path in "Pr
   * after live:, must also lie under docs/labs/ and be readable as UTF-8
 And for a Built or Amended spec, also:
   * a requirement that no file cites and no valid live: lab names by its exact ID
+  * a live: lab that still says _not run yet_ (its evidence is blank), reported once per lab
 
 Writes the table and the problems to the GitHub job summary when there is one, then prints one
 row per requirement, as UTF-8 whatever the console's encoding. Stdlib only.
@@ -69,6 +70,7 @@ NOT_SCANNED = {
     "build", "dist", ".tox",
 }
 ENFORCED = {"Built", "Amended"}
+PENDING = "_not run yet_"  # a lab's placeholder for evidence that has not been recorded
 
 
 @dataclass(frozen=True)
@@ -248,7 +250,32 @@ def check(root: Path) -> tuple[list[Requirement], dict[str, set[str]], list[str]
                 f"{req.rid}: {req.spec} is {req.status}, but nothing proves it "
                 "(no file cites it and no live: lab names it)"
             )
+    problems += _pending_evidence(root, reqs)
     return reqs, cited, problems
+
+
+def _pending_evidence(root: Path, reqs: list[Requirement]) -> list[str]:
+    """A Built or Amended spec whose live: lab still holds the PENDING marker, once per lab.
+
+    Naming a requirement is enough for a lab to count as its live proof, so without this a spec
+    could be set to Built while the lab's evidence is still blank.
+    """
+    pending: dict[tuple[str, str], str] = {}
+    for req in reqs:
+        if req.status in ENFORCED:
+            for token in req.lives:
+                pending.setdefault((req.spec, token.split("::")[0]), req.status)
+    found = []
+    for (spec, lab), status in sorted(pending.items()):
+        if _path_problem(root, lab, lab=True):
+            continue  # already reported by _check_proofs
+        count = (_read(root / lab) or "").count(PENDING)
+        if count:
+            found.append(
+                f"{spec} is {status}, but {lab} still says {PENDING} ({count}x): "
+                "record the live evidence before calling the spec Built"
+            )
+    return found
 
 
 def table(reqs: list[Requirement], cited: dict[str, set[str]]) -> list[str]:

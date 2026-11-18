@@ -101,6 +101,36 @@ def test_a_lab_naming_only_a_longer_id_does_not_count(tmp_path: Path) -> None:
     assert any(p.startswith("SPEC-900-R1:") for p in _problems(root))
 
 
+PENDING = "_not run yet_"
+TWO_LIVE_ROWS = [
+    ("SPEC-900-R1", "live: `docs/labs/00-x.md`"),
+    ("SPEC-900-R2", "live: `docs/labs/00-x.md`"),
+]
+
+
+@pytest.mark.parametrize("status", ["Built", "Amended"])
+def test_a_built_spec_whose_lab_still_awaits_evidence_fails(tmp_path: Path, status: str) -> None:
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", status, TWO_LIVE_ROWS),
+        "docs/labs/00-x.md": f"SPEC-900-R1: done.\n\nSPEC-900-R2\n\n**Evidence:** {PENDING}\n",
+    })
+    found = [p for p in _problems(root) if PENDING in p]
+    # Once per spec and lab, not once per row; the lab names both IDs, so nothing else fails.
+    assert len(found) == 1, found
+    assert found[0].startswith(f"SPEC-900-x.md is {status}") and "docs/labs/00-x.md" in found[0]
+
+
+@pytest.mark.parametrize("status", ["Draft", "Approved", "Retired"])
+def test_a_spec_not_yet_built_may_name_a_lab_awaiting_evidence(
+    tmp_path: Path, status: str
+) -> None:
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", status, TWO_LIVE_ROWS),
+        "docs/labs/00-x.md": f"SPEC-900-R1 SPEC-900-R2\n\n**Evidence:** {PENDING}\n",
+    })
+    assert _problems(root) == []
+
+
 def test_a_duplicate_id_fails(tmp_path: Path) -> None:
     root = _tree(tmp_path, {
         "docs/specs/SPEC-900-x.md": _spec(

@@ -4,6 +4,7 @@
 - **Roadmap phase / Jira:** Phase 0 · THL epic for Phase 0 (created by R9)
 - **Approved by / date:** Roshan, 2026-11-18
 - **Amended in planning:** 2026-11-18. R5's key rule applies on story branches; the R8 fixtures are built by the test in a temporary directory (approved with the plan)
+- **Amended after the pre-publication review:** 2026-11-18, approved by Roshan. R8 also fails a Built or Amended spec whose live lab still says `_not run yet_`: naming a requirement was enough for a lab to count as proof, so Built could pass with blank evidence
 
 > One page. `CLAUDE.md` wins over anything written here. Drafted through `superpowers:brainstorming`
 > on 2026-11-18 ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)).
@@ -49,7 +50,7 @@ any committed file (CLAUDE.md rule 6).
 | SPEC-001-R5 | Commit messages are conventional; on a story branch (`type/THL-<n>-slug`) the subject carries that THL key, and a message without it fails | `scripts/dev/test_check_commits.py` |
 | SPEC-001-R6 | gitleaks blocks secrets in pre-commit and in CI over the full history; a planted fake key is caught | `.github/workflows/ci.yml`, live: `docs/labs/00-foundations.md` |
 | SPEC-001-R7 | CodeQL (Python, Actions) runs on PRs and `main`; Dependabot watches `uv` and Actions | `.github/workflows/codeql.yml`, `.github/dependabot.yml` |
-| SPEC-001-R8 | The requirement check fails on a duplicate ID, a cited ID that is unknown or belongs to a Retired spec, a missing "Proved by" path, or an unparseable spec; for a Built or Amended spec, also on a requirement that no file cites and no existing `live:` lab mentions. Draft and Approved specs are exempt from that last rule | `scripts/dev/test_spec_coverage.py` |
+| SPEC-001-R8 | The requirement check fails on a duplicate ID, a cited ID that is unknown or belongs to a Retired spec, a missing "Proved by" path, or an unparseable spec; for a Built or Amended spec, also on a requirement that no file cites and no existing `live:` lab mentions, and on a `live:` lab that still says `_not run yet_`. Draft and Approved specs are exempt from those two rules | `scripts/dev/test_spec_coverage.py` |
 | SPEC-001-R9 | A `THL` planning project exists on the existing Jira site with one epic per roadmap phase, and no bot account on that site | live: `docs/labs/00-foundations.md` |
 | SPEC-001-R10 | The sandbox Jira site's read token (scoped to read, or an OAuth app with read scopes if scoped tokens are unavailable) can read the site, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R11 | The ServiceNow read user (`snc_read_only`) can read `change_request`, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
@@ -62,7 +63,8 @@ template): the Status line and every `| SPEC-NNN-Rn |` row. It looks for `covers
 command, it prints one row per requirement (cited by / live proof / missing), which is also the CI
 job summary. Its test runs it on the real repo and on small broken trees it builds in a temporary
 directory. It also fails closed on a malformed row, an empty specs folder, a live proof outside
-docs/labs/, and a proof path outside the repo or naming a test the file does not contain.
+docs/labs/, and a proof path outside the repo or naming a test the file does not contain. A lab
+marks evidence it has not recorded yet with `_not run yet_`; a Built spec cannot name such a lab.
 
 **`check_sandboxes.py` (R10–R13).** Reads `.env`, prints pass or fail per line, never prints a token
 or a site URL, keeps going when one sandbox is down. Run by hand in Phase 0; Phase 2 reuses it as a
