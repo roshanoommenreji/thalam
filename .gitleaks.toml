@@ -1,9 +1,9 @@
 # gitleaks configuration for Thalam (SPEC-001-R6).
 #
 # This repository is public from its first push (ADR-0011), so the HISTORY must be clean, not
-# just the working tree. Copied from Kaval's and trimmed. Two rules are added for CLAUDE.md
-# rule 6 (no real instance addresses), and docs are no longer exempt: a doc is where a real
-# address is most likely to be pasted.
+# just the working tree. Copied from Kaval's and trimmed. Three rules are added for CLAUDE.md
+# rule 6 (no real instance addresses or tenant IDs), and docs and .env.example are no longer
+# exempt: they are where a real address is most likely to be pasted.
 #
 #   gitleaks git --staged    the pre-commit hook (scripts/dev/install-hooks.sh)
 #   gitleaks git .           the whole history (CI's `secrets` job, `make secrets-scan`)
