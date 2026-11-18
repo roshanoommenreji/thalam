@@ -10,7 +10,7 @@
 
 **Conventions for whoever runs this:**
 - Run every command from the repo root (`Desktop\Claude\Release Agent`) in **Git Bash**.
-- `THL-1` means the Phase 0 epic's key from Task 0. If Jira gave it a different number, use that number everywhere this plan says `THL-1`.
+- `THL-1` is the Phase 0 epic. Each task also has its own story under it (created 2026-11-18), and from Task 3 on, a task's commits and branch names use **its story key** where this plan says `THL-1`: Task 0 `THL-10`, 1 `THL-11`, 2 `THL-12`, 3 `THL-13`, 4 `THL-14`, 5 `THL-15`, 6 `THL-16`, 7 `THL-17`, 8 `THL-18`, 9 `THL-19`, 10 `THL-20`, 11 `THL-21`.
 - Steps marked **STOP — Roshan** are outward-facing or need his accounts. Do not do them without his go.
 - Never paste a real site address, tenant ID or token into a committed file (CLAUDE.md rule 6).
 
