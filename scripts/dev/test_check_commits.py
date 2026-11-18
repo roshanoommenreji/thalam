@@ -17,7 +17,7 @@ STORY = "feat/THL-1-foundations"
     [
         "feat: THL-1 commit-msg hook",
         "fix(ci): THL-1 pin the gitleaks checksum",
-        "infra!: THL-7 move the database to its own server",
+        "infra!: THL-1 move the database to its own server",
         "docs: THL-1 Lab 00\n\nBody text with #hashtag and a PR ref #1.",
         "Merge pull request #2 from roshanoommenreji/feat/THL-1-foundations",
         "Merge branch 'feat/THL-2-release-graph'",
@@ -33,6 +33,24 @@ def test_accepts(message: str) -> None:
 
 def test_housekeeping_branch_needs_no_key() -> None:
     assert problems("chore: tidy the root", "chore/repo-structure") == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "infra!: THL-7 move the database to its own server",  # another story's key
+        "feat: THL-10 hook",  # THL-10 is not THL-1
+        "feat: THL-1x hook",  # not a key at all
+    ],
+)
+def test_a_story_branch_needs_its_own_key(message: str) -> None:
+    found = problems(message, STORY)
+    assert any("THL-1" in p and "needs its THL key" in p for p in found), found
+
+
+def test_the_subject_may_carry_more_keys_than_the_branch() -> None:
+    assert problems("fix: THL-1 THL-7 shared fixture", STORY) == []
+    assert problems("infra: THL-7 move the database", "infra/THL-7-db") == []
 
 
 @pytest.mark.parametrize(

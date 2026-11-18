@@ -13,8 +13,9 @@ Rules:
   1. The subject is a conventional commit: `<type>[(scope)][!]: <text>`, where type is one of
      feat, fix, docs, infra, chore. Merge and revert commits are generated, so exempt.
   2. The subject is at most 100 characters.
-  3. On a story branch (its name carries THL-<n>), the subject carries a THL key. That key is
-     what links the commit to its Jira issue (CLAUDE.md, "Commits and branches").
+  3. On a story branch (its name carries THL-<n>), the subject carries that branch's key; other
+     keys may sit beside it. That key is what links the commit to its Jira issue (CLAUDE.md,
+     "Commits and branches"), so a typo such as THL-91 for THL-19 is refused.
   4. No smart-commit commands (`THL-1 #comment ...`, `#time`, `#done`). Jira runs those only
      when the commit email matches a Jira user, and this repo commits under the GitHub no-reply
      address, so a command would be silently ignored.
@@ -70,10 +71,12 @@ def problems(message: str, branch: str = "", *, in_ci: bool = False) -> list[str
         )
     if len(subject) > MAX_SUBJECT:
         found.append(f"the subject is {len(subject)} characters; keep it to {MAX_SUBJECT}")
-    if KEY.search(branch) and not KEY.search(subject):
+    branch_keys = set(KEY.findall(branch))
+    if branch_keys and not branch_keys & set(KEY.findall(subject)):
         found.append(
-            f"branch {branch!r} is a story branch, so the subject needs its THL key; "
-            "the key is what links the commit to the Jira issue"
+            f"branch {branch!r} is a story branch, so the subject needs its THL key "
+            f"({' or '.join(sorted(branch_keys))}); the key is what links the commit to the "
+            "Jira issue"
         )
     if SMART_COMMAND.search("\n".join(lines)):
         found.append(
