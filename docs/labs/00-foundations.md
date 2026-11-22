@@ -35,7 +35,9 @@ account on the planning site.
 ## 2. Sandbox Jira site and its read-only token — SPEC-001-R10
 
 1. Create a **new** free Jira site, `<your-sandbox>.atlassian.net`, separate from the planning
-   site. Create one space in it (any name; Phase 1 adds the fixture company).
+   site. Create one space in it (any name; Phase 1 adds the fixture company). Signed in to an
+   account that already has a site, the sign-up page offers **Go to Jira** (the planning site:
+   wrong) or **start a new site** (right).
 2. Invite a bot account (for example a `+thalam-bot` alias of your email), accept, sign in as it.
 3. As the bot, at id.atlassian.com → Security → API tokens → **Create API token with scopes**
    (Atlassian may first send a one-time code to the bot's email): app **Jira**, select only
@@ -44,7 +46,16 @@ account on the planning site.
    If scoped tokens are not offered, stop: the fallback is an OAuth app with read scopes, which
    needs a change to `check_sandboxes.py`.
 4. Cloud ID: open `https://<your-sandbox>.atlassian.net/_edge/tenant_info` and copy `cloudId`. This endpoint is undocumented but long-standing; if it fails, stop and record it here.
-5. In `.env`: `JIRA_SANDBOX_CLOUD_ID`, `JIRA_SANDBOX_EMAIL`, `JIRA_READ_TOKEN`.
+5. In `.env`: `JIRA_SANDBOX_CLOUD_ID`, `JIRA_SANDBOX_EMAIL` (the bot's full address),
+   `JIRA_READ_TOKEN`.
+
+**Evidence (2026-11-22):** a new free site, separate from the planning site, created through
+**start a new site**; one team-managed Kanban space. No card was asked for. The sign-up page
+started a Premium trial, which without payment details falls back to Free, so it cannot bill. A bot
+account on a `+thalam-bot` alias was invited from the site's setup screen. As the bot, Atlassian
+asked for an 8-digit code emailed to that alias before the token page opened. Scoped token: app
+Jira, scope `read:jira-work` only, expiring 2027-11-22 (the 365-day maximum). `tenant_info`
+returned a `cloudId`. `make sandboxes`: R10 read `HTTP 200`, R10 write refused `HTTP 401`.
 
 ## 3. ServiceNow developer instance and its read-only user — SPEC-001-R11
 
@@ -69,6 +80,19 @@ record an update (for example `sys_mod_count`); acceptable on a throwaway develo
 403 alone does not prove `snc_read_only` is what refused the write; the Roles-tab check in step 2
 is the control.
 
+**Evidence (2026-11-22):**
+- **Instance:** requested on the developer site with release **Brazil**, the latest offered;
+  Australia was the other choice. Ready in a few minutes. **Start building** opened it already
+  signed in through the developer account.
+- **User:** `thalam.read`, created with Identity type **Machine** and no password field on the
+  new-user form. Reading the record back showed `identity_type=machine`,
+  `web_service_access_only=true` (switched on by itself), `internal_integration_user=false`,
+  active, not locked. The password was set afterwards with **Set Password**, by the owner.
+- **Roles:** the user's role records show `itil` and `snc_read_only`, both assigned directly
+  (`inherited=false`). `itil` also brings about 45 inherited roles, write ones among them, such as
+  `sn_change_write`. Blocking all of those is exactly what `snc_read_only` is for.
+- **Check:** `make sandboxes` gave R11 read `HTTP 200` and R11 write refused `HTTP 403`.
+
 ## 4. Slack app — SPEC-001-R12
 
 Use a workspace of its own: a new free one named **Thalam** (Create Another Workspace → skip
@@ -85,6 +109,19 @@ inviting → Continue with Free), so the bot never sits beside another project's
    SPEC-001-R12 was amended to the channel below).
 4. Create and Install → Allow, then copy the Bot User OAuth Token to `.env` as `SLACK_BOT_TOKEN`.
 5. Create `#thalam-releases` (public) and run `/invite @Thalam` in it. Invite it nowhere else.
+
+**Evidence (2026-11-22):**
+- **Workspace:** a new free workspace, Thalam. It comes with three channels; the bot is in none
+  of them.
+- **App:** Thalam, with bot scopes `channels:read` and `groups:read` only, no user scopes and no
+  events.
+- **The name clash:** creating `#thalam` failed with "That name is already taken by a channel,
+  username, or user group". The default username was changed to `thalam_bot` and the app
+  reinstalled; the consent screen asked for the same two scopes. `#thalam` was still taken, while
+  `thalam_bot` was free, so the bot user keeps the name it was created with.
+- **Channel:** `#thalam-releases` was created (public), and `/invite @Thalam` posted "Thalam was
+  added to #thalam-releases".
+- **Check:** `make sandboxes` gave R12 auth.test `HTTP 200` and R12 `channels: thalam-releases`.
 
 ## 5. Microsoft Foundry: a Claude deployment behind two budgets — SPEC-001-R13
 
@@ -212,7 +249,7 @@ can be pasted here. What a failure usually means:
 - R10 read `HTTP 401`: wrong email or token, or the token belongs to the planning site's account.
 - R10 write `HTTP 400 (... CAN write)`: the token has write scopes. Recreate it with read scopes only.
 - R11 write `HTTP 200 (... CAN write)`: `snc_read_only` is missing from `thalam.read`.
-- R12 `channels: general, thalam`: remove the app from `#general`.
+- R12 `channels: general, thalam-releases`: remove the app from `#general`.
 - R13 `must be the resource name only`: `.env` holds an address or a URL; keep only
   `<your-resource>`.
 - R13 `HTTP 401` or `HTTP 403`: a wrong key, or another resource's key.
@@ -227,7 +264,7 @@ can be pasted here. What a failure usually means:
 
 | Credential | Where | Expires | Rotate by |
 |---|---|---|---|
-| Jira sandbox read token | bot account, id.atlassian.com | _not run yet_ | |
+| Jira sandbox read token | bot account, id.atlassian.com | 2027-11-22 | 2027-11-08: create a new scoped token, update `.env`, run `make sandboxes`, revoke the old one |
 | ServiceNow `thalam.read` | the instance | password policy of the instance | |
 | ServiceNow instance | developer.servicenow.com | reclaimed after 10 days without a sign-in to it (once 90+ days old) | sign in weekly |
 | Slack bot token | api.slack.com/apps | does not expire; revoke by uninstalling | |
