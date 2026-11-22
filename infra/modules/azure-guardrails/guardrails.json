@@ -25,7 +25,15 @@
     "inr_per_usd": 95,
     "lag_days": 3
   },
-  "brake": {"nightly_at": "02:00", "timezone": "Asia/Kolkata", "webhook_valid_days": 365},
+  "brake": {
+    "automation_account": "thalam-brake",
+    "runbook": "thalam-brake",
+    "action_group": "thalam-brake",
+    "schedule": "thalam-park-nightly",
+    "nightly_at": "02:00",
+    "timezone": "Asia/Kolkata",
+    "webhook_valid_days": 365
+  },
   "policy": {
     "assignment": "thalam-guardrails",
     "allowed_locations": ["eastus2", "global"],

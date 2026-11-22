@@ -2,7 +2,7 @@
 # account. The action group starts it at a budget's brake line; a schedule starts it every night.
 
 resource "azurerm_automation_account" "brake" {
-  name                = "thalam-brake"
+  name                = local.n.brake.automation_account
   location            = azurerm_resource_group.thalam.location
   resource_group_name = azurerm_resource_group.thalam.name
   sku_name            = "Basic" # the first 500 job-minutes a month are free
@@ -24,7 +24,7 @@ resource "azurerm_automation_runtime_environment" "python" {
 }
 
 resource "azurerm_automation_runbook" "brake" {
-  name                     = "thalam-brake"
+  name                     = local.n.brake.runbook
   location                 = azurerm_resource_group.thalam.location
   resource_group_name      = azurerm_resource_group.thalam.name
   automation_account_name  = azurerm_automation_account.brake.name
@@ -58,7 +58,7 @@ resource "azurerm_automation_webhook" "brake" {
 }
 
 resource "azurerm_automation_schedule" "nightly" {
-  name                    = "thalam-park-nightly"
+  name                    = local.n.brake.schedule
   resource_group_name     = azurerm_resource_group.thalam.name
   automation_account_name = azurerm_automation_account.brake.name
   frequency               = "Day"
@@ -106,7 +106,7 @@ resource "azurerm_role_assignment" "brake" {
 }
 
 resource "azurerm_monitor_action_group" "brake" {
-  name                = "thalam-brake"
+  name                = local.n.brake.action_group
   resource_group_name = azurerm_resource_group.thalam.name
   short_name          = "thalambrake"
   tags                = local.tags
