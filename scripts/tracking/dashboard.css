@@ -27,7 +27,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 a{color:var(--ink);text-decoration-color:var(--brass);text-underline-offset:3px}
 a:hover{color:var(--brass-ink)}
 a:focus-visible,summary:focus-visible{outline:2px solid var(--brass);outline-offset:2px;border-radius:4px}
-code{font:0.88em/1.4 var(--mono);background:var(--sunk);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+code{font:0.88em/1.4 var(--mono);font-variant-ligatures:none;background:var(--sunk);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
 h2,h3,h4{font-family:var(--display);text-wrap:balance;margin:0}
 h2{font-size:26px;letter-spacing:-.01em;margin:8px 0 10px}
 h3{font-size:17px;margin-bottom:10px}
@@ -258,7 +258,7 @@ h3.sect{margin:22px 0 12px;font-size:18px}
 .checks li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .gloss-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
 .glossary{margin:0;display:flex;flex-direction:column;gap:10px}
-.term{scroll-margin-top:64px}
+.term,.sect[id],tr[id]{scroll-margin-top:64px}
 .glossary dt{font-weight:600}
 .glossary dd{margin:2px 0 0;color:var(--ink-2);font-size:13.5px}
 .where{display:block;margin-top:2px}

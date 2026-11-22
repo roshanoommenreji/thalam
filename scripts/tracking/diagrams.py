@@ -141,8 +141,10 @@ def sequence(lanes: list[tuple[str, str]], steps: list[Step], *, uid: str, aria:
     def x(lane: str) -> float:
         return pad + index[lane] * colw + colw / 2
 
+    # Capped and centred, so a flow with few lanes is not blown up to the card's full width.
     out = [f'<svg class="diagram seq" viewBox="0 0 {width:.0f} {height:.0f}" '
-           f'style="min-width:{width * 0.72:.0f}px" role="img" aria-label="{_e(aria)}">',
+           f'style="min-width:{width * 0.72:.0f}px;max-width:{width * 1.25:.0f}px;margin:0 auto" '
+           f'role="img" aria-label="{_e(aria)}">',
            _markers(uid, ("call", "return", "write"))]
     for lane, label in lanes:
         cx = x(lane)
