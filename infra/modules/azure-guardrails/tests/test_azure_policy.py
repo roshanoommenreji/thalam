@@ -31,8 +31,12 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "Microsoft.CognitiveServices/accounts/deployments/sku.capacity": ("sku", "capacity"),
     "Microsoft.Search/searchServices/sku.name": ("sku", "name"),
 }
-PARAM = re.compile(r"^\[parameters\('(\w+)'\)\]$")
 MISSING = object()
+TOKEN = re.compile(r"\s*(?:(?P<name>[A-Za-z]+)\(|'(?P<text>[^']*)'|(?P<num>-?\d+)|(?P<punct>[,)]))")
+
+
+class PolicyError(Exception):
+    """What Azure reports as InvalidPolicyEvaluation: the rule could not be evaluated."""
 
 # The parameter values Terraform passes to each rule (infra/modules/azure-guardrails/policy.tf).
 PARAMS: dict[str, dict[str, Any]] = {
@@ -55,9 +59,53 @@ def _field(resource: dict[str, Any], alias: str) -> Any:
     return value
 
 
-def _value(raw: Any, params: dict[str, Any]) -> Any:
-    if isinstance(raw, str) and (m := PARAM.match(raw)):
-        return params[m.group(1)]
+def _call(name: str, args: list[Any], resource: dict[str, Any], params: dict[str, Any]) -> Any:
+    """The template functions the rules use, as Azure Policy evaluates them."""
+    if name == "parameters":
+        return params[args[0]]
+    if name == "field":
+        found = _field(resource, args[0])
+        return None if found is MISSING else found
+    if name == "coalesce":
+        return next((a for a in args if a is not None), None)
+    if name == "string":
+        return str(args[0]).lower() if isinstance(args[0], bool) else str(args[0])
+    if name == "int":
+        try:
+            return int(args[0])
+        except (TypeError, ValueError) as err:
+            raise PolicyError(f"int() of {args[0]!r}") from err
+    raise AssertionError(f"function {name!r} is outside the subset this test evaluates")
+
+
+def _expression(text: str, resource: dict[str, Any], params: dict[str, Any]) -> Any:
+    """Evaluate a policy expression such as [int(string(coalesce(field('x'), 0)))]."""
+    tokens = [m.groupdict() for m in TOKEN.finditer(text[1:-1])]
+    position = 0
+
+    def parse() -> Any:
+        nonlocal position
+        token = tokens[position]
+        position += 1
+        if token["text"] is not None:
+            return token["text"]
+        if token["num"] is not None:
+            return int(token["num"])
+        assert token["name"], f"cannot parse {text!r}"
+        args: list[Any] = []
+        while tokens[position]["punct"] != ")":
+            args.append(parse())
+            if tokens[position]["punct"] == ",":
+                position += 1
+        position += 1
+        return _call(token["name"], args, resource, params)
+
+    return parse()
+
+
+def _value(raw: Any, resource: dict[str, Any], params: dict[str, Any]) -> Any:
+    if isinstance(raw, str) and raw.startswith("[") and raw.endswith("]"):
+        return _expression(raw, resource, params)
     return raw
 
 
@@ -72,12 +120,21 @@ def _holds(cond: dict[str, Any], resource: dict[str, Any], params: dict[str, Any
         return any(_holds(c, resource, params) for c in cond["anyOf"])
     if "not" in cond:
         return not _holds(cond["not"], resource, params)
-    actual = _field(resource, cond["field"])
-    (op,) = (k for k in cond if k != "field")
-    want = _value(cond[op], params)
+    if "field" in cond:
+        actual = _field(resource, cond["field"])
+    else:
+        actual = _value(cond["value"], resource, params)
+        actual = MISSING if actual is None else actual
+    (op,) = (k for k in cond if k not in {"field", "value"})
+    want = _value(cond[op], resource, params)
     if op == "exists":  # Azure Policy compares strings without regard to case
         return (actual is not MISSING) == (str(want).lower() == "true")
-    if actual is MISSING:  # a missing field: equals/in/greater are false, notEquals/notIn true
+    if op in {"greater", "less", "greaterOrEquals", "lessOrEquals"}:
+        # Azure refuses to compare different types (InvalidPolicyEvaluation, found live).
+        if actual is MISSING or type(actual) is not type(want):
+            raise PolicyError(f"{op} on {actual!r} and {want!r}")
+        return bool(actual > want) if op == "greater" else bool(actual >= want)
+    if actual is MISSING:  # a missing field: equals/in are false, notEquals/notIn true
         return op in {"notEquals", "notIn"}
     if op == "equals":
         return bool(_lower(actual) == _lower(want))
@@ -86,8 +143,6 @@ def _holds(cond: dict[str, Any], resource: dict[str, Any], params: dict[str, Any
     if op in {"in", "notIn"}:
         inside = _lower(actual) in [_lower(w) for w in want]
         return inside if op == "in" else not inside
-    if op == "greater":
-        return bool(actual > want)
     raise AssertionError(f"operator {op!r} is outside the subset this test evaluates")
 
 
@@ -98,7 +153,7 @@ def denied(rule: str, resource: dict[str, Any]) -> bool:
 
 
 def deployment(model: str = "claude-haiku-5-5", sku: str = "GlobalStandard",
-               capacity: int | None = 1) -> dict[str, Any]:
+               capacity: int | str | None = 1) -> dict[str, Any]:
     body: dict[str, Any] = {
         "type": "Microsoft.CognitiveServices/accounts/deployments",
         "sku": {"name": sku},
@@ -121,6 +176,22 @@ def test_the_approved_deployment_is_allowed_up_to_the_cap(capacity: int) -> None
 def test_a_deployment_over_the_cap_is_refused() -> None:
     # The live proof in Lab 00 uses this exact case.
     assert denied("deployments", deployment(capacity=4))
+
+
+@pytest.mark.parametrize(("capacity", "refused"), [("1", False), ("3", False), ("4", True)])
+def test_a_capacity_sent_as_text_is_compared_as_a_number(capacity: str, refused: bool) -> None:
+    # Found by the live proof (2026-11-22): the request carried the capacity so that a plain
+    # `greater` on the field could not be evaluated (InvalidPolicyEvaluation), which refused
+    # even the approved deployment. The rule converts it to a number first.
+    assert denied("deployments", deployment(capacity=capacity)) is refused
+
+
+def test_a_plain_greater_on_text_cannot_be_evaluated() -> None:
+    # The trap itself, so the evaluator above is known to model it.
+    rule = {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.capacity",
+            "greater": "[parameters('maxCapacity')]"}
+    with pytest.raises(PolicyError):
+        _holds(rule, deployment(capacity="4"), PARAMS["deployments"])
 
 
 def test_a_deployment_without_a_capacity_is_refused() -> None:
@@ -173,12 +244,17 @@ def test_every_parameter_is_declared_used_and_holds_no_number(rule: str) -> None
     used = set(re.findall(r"parameters\('(\w+)'\)", text))
     assert declared == used == set(PARAMS[rule])
     assert body["mode"] == "All"
-    # The numbers live in guardrails.json only (SPEC-001-R18): no digits inside the rule itself.
-    assert not re.search(r"\d", text.replace("Microsoft.CognitiveServices", "")), text
+    # The numbers live in guardrails.json only (SPEC-001-R18): no digits inside the rule itself,
+    # apart from coalesce's fallback of 0 for a missing capacity (refused by its own clause).
+    stripped = text.replace("Microsoft.CognitiveServices", "").replace("), 0)", "))")
+    assert not re.search(r"\d", stripped), text
 
 
 def test_every_alias_the_rules_use_is_one_this_test_knows() -> None:
     # A new alias must be added to ALIASES (and checked against `az provider show`) on purpose.
     for body in RULES.values():
-        for alias in re.findall(r'"field": "([^"]+)"', json.dumps(body["policyRule"])):
+        text = json.dumps(body["policyRule"])
+        aliases = re.findall(r'"field": "([^"]+)"', text) + re.findall(r"field\('([^']+)'\)", text)
+        assert aliases
+        for alias in aliases:
             assert alias in ALIASES, alias

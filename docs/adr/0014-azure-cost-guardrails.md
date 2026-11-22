@@ -137,6 +137,24 @@ filter, by a SPEC amendment.
 - **Regenerating the key as the brake:** it stops a leaked key, but not a loop inside Thalam using the
   current key. Deleting the deployment stops both.
 
+## Found by the live proof (2026-11-22)
+
+The first refused deployment (Lab 00 §5 step 6, capacity 4) was refused for the wrong reason.
+- **What Azure said:** `InvalidPolicyEvaluation`, not `RequestDisallowedByPolicy`. A `greater`
+  comparison "expects operands of same type".
+- **What that meant:** in a deployment request, `sku.capacity` did not reach the rule as a number.
+  The stored rule and its integer parameter (3) were correct.
+- **The consequence:** a rule that cannot be evaluated refuses everything, so the approved
+  capacity-1 deployment would have been refused too. That fails safe, and costs nothing, but it
+  would have blocked step 8.
+- **Why the test missed it:** the evaluator test treated the capacity as a number, which is how it
+  looks in a resource body.
+
+**The fix:** the rule compares `int(string(coalesce(capacity, 0)))`, which is a number whether the
+request sends a number, text or nothing. A missing capacity is still refused by its own clause.
+The evaluator now refuses to compare different types, as Azure does. A new test shows the old rule
+failing on a capacity sent as text, and the new rule passing.
+
 ## Consequences
 
 - **The worst case is bounded by the design, not by an alert.** A day at the cap costs at most about
