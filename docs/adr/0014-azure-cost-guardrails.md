@@ -165,7 +165,27 @@ failing on a capacity sent as text, and the new rule passing.
 - **The fix:** `foundry-up` now sends the deployment with `az rest` (API `2025-10-01-preview`, as
   in Microsoft's Azure-Samples/claude), takes the three fields from `.env`, and polls until
   provisioning ends. They are attestations about Roshan's organization, so they are his to enter
-  and never in git.
+  and never in git. For a personal project the organization is the person: Azure accepted an
+  individual's own name.
+
+**Third finding, from the brake test:**
+- **What happened:** the brake's `DELETE` is accepted at once, and the deployment stays listed as
+  `Deleting` for about half a minute. During that time `make foundry-up` said "UP already" and
+  `foundry-status` said "up".
+- **The fix:** `foundry-up` waits while any deployment is in flight (`Deleting`, `Creating`), and
+  refuses a `Failed` one until it is parked. `foundry-status` names the state when it isn't
+  `Succeeded`. Nothing was spent wrongly: the brake still deleted the deployment.
+
+**Fourth finding, the brake's notice e-mail:**
+- **What happened:** the action group's test started the runbook, but no e-mail came. The portal's
+  test reported the e-mail as `Unknown`.
+- **Why:** Azure Monitor holds action-group e-mail until the address is verified with a one-time
+  code. The code expires 30 minutes after the action group is saved, and the one sent at
+  `guardrails-apply` had expired unclicked. The API shows the receiver as `Enabled` either way, so
+  neither `foundry-up` nor the sweep can see it.
+- **The fix:** Lab 00 now has a verify step right after the apply, and the test e-mail is its
+  check. Verification covers the whole directory, so it is done once. The brake never depended on
+  the e-mail: only the notice was missing.
 
 ## Consequences
 
