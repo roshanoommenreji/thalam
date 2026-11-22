@@ -6,6 +6,7 @@
 - **Amended in planning:** 2026-11-18. R5's key rule applies on story branches; the R8 fixtures are built by the test in a temporary directory (approved with the plan)
 - **Amended after the pre-publication review:** 2026-11-18, approved by Roshan. R8 also fails a Built or Amended spec whose live lab still says `_not run yet_`: naming a requirement was enough for a lab to count as proof, so Built could pass with blank evidence
 - **Amended for the platform switch:** 2026-11-22, approved by Roshan. The hosted model moves to Claude on Microsoft Foundry ([ADR-0012](../adr/0012-microsoft-foundry-and-azure.md)); R13, open question 3, Out of scope, Numbers, Done when and the Phase 0 model note change
+- **Amended for the rupee ceiling:** 2026-11-22, approved by Roshan. The account bills in INR and the most he can spend is ₹1,500 a month, so the budgets are ₹1,500 and ₹1,000 ([ADR-0013](../adr/0013-cost-ceiling-1500-inr.md)); R13, open question 3 and Numbers change
 
 > One page. `CLAUDE.md` wins over anything written here. Drafted through `superpowers:brainstorming`
 > on 2026-11-18 ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)).
@@ -30,8 +31,8 @@ this, Phase 1 can start writing code without revisiting any of it.
 Cost **about $0**:
 - GitHub Free (public repo), two Jira Free sites, a ServiceNow Personal Developer Instance, Slack Free.
 - A Claude deployment on Microsoft Foundry, on a card-backed pay-as-you-go Azure subscription.
-- Two Azure budgets: **$100 / month** with alerts at 70 / 85 / 95 %, and **$20 / month** on the
-  model (ADR-0008's model cap).
+- Two Azure budgets in the billing currency, INR: **₹1,500 / month** with alerts at 70 / 85 / 95 %,
+  and **₹1,000 / month** on the model (ADR-0013).
 - Phase 0's only model call is a token count.
 
 Data: fixture data only; no real company data, URLs, tenant IDs or resource names in any committed
@@ -43,7 +44,7 @@ file (CLAUDE.md rule 6).
 |---|---|---|---|
 | 1 | Branch protection and free CodeQL need a public repo on GitHub Free. Public now, private, or Pro? | Public from day one, like Kaval. Phase 8 "repo public" becomes a final access review | 2026-11-18 |
 | 2 | Jira Free cannot restrict project access. Where do planning and the sandbox live? | Two sites: THL planning on the existing site (no bots); a new sandbox site holding fixture data and the bots | 2026-11-18 |
-| 3 | Thalam spends nothing on AWS before Phase 7. What guards cost in Phase 0? | The Anthropic console limit only; AWS budget item moves to the start of Phase 7. *Amended 2026-11-22 (ADR-0012): two Azure budgets, $100 (alerts 70 / 85 / 95 %) and $20 on the model, created before the deployment; the hosting brake comes with hosting in Phase 7* | 2026-11-18 |
+| 3 | Thalam spends nothing on AWS before Phase 7. What guards cost in Phase 0? | The Anthropic console limit only; AWS budget item moves to the start of Phase 7. *Amended 2026-11-22 (ADR-0012): two Azure budgets, ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on the model (ADR-0013), created before the deployment; the hosting brake comes with hosting in Phase 7* | 2026-11-18 |
 | 4 | How do requirements link to their proof? | `covers: SPEC-NNN-Rn` text tags in any file, checked by pytest; live proofs name a lab doc | 2026-11-18 |
 
 ## Requirements
@@ -62,7 +63,7 @@ file (CLAUDE.md rule 6).
 | SPEC-001-R10 | The sandbox Jira site's read token (scoped to read, or an OAuth app with read scopes if scoped tokens are unavailable) can read the site, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R11 | The ServiceNow read user (`snc_read_only`) can read `change_request`, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R12 | The Slack app's token passes `auth.test` and the app is a member of `#thalam` only | `scripts/dev/check_sandboxes.py` |
-| SPEC-001-R13 | The Claude deployment on Microsoft Foundry answers a token-count call with the key in `.env`, and Azure budgets exist before it: $100 / month on Thalam's resource group (alerts 70 / 85 / 95 %) and $20 / month on the model | `scripts/dev/check_sandboxes.py`, live: `docs/labs/00-foundations.md` |
+| SPEC-001-R13 | The Claude deployment on Microsoft Foundry answers a token-count call with the key in `.env`, and Azure budgets exist before it: ₹1,500 / month on Thalam's resource group (alerts 70 / 85 / 95 %) and ₹1,000 / month on the model | `scripts/dev/check_sandboxes.py`, live: `docs/labs/00-foundations.md` |
 
 **How the check works (R8).** `scripts/dev/spec_coverage.py` reads `docs/specs/SPEC-*.md` (not the
 template): the Status line and every `| SPEC-NNN-Rn |` row. It looks for `covers: SPEC-…` tags in

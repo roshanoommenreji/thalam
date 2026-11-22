@@ -91,8 +91,11 @@ has moved, follow the step's intent and note the new label here.
 2. **Resource group:** `az group create --name rg-thalam --location eastus2`. West US 3 also works:
    both offer Claude Haiku and Opus as Global Standard (checked 2026-11-22). Thalam gets its own
    group so the budgets see Thalam alone.
-3. **Budget `thalam-total`:** Cost Management → Budgets → Add, scope `rg-thalam`, monthly, **$100**.
-   Actual-cost alerts at **70 %, 85 % and 95 %** ($70 / $85 / $95, ADR-0008), to your email.
+3. **Budget `thalam-total`:** Cost Management → Budgets → Add, scope `rg-thalam`, monthly. Enter
+   the amount in your **billing currency**, the one shown on your invoice. For an India billing
+   account that is INR: **₹1,500** ([ADR-0013](../adr/0013-cost-ceiling-1500-inr.md)). Elsewhere,
+   convert ₹1,500 at the day's rate. Actual-cost alerts at **70 %, 85 % and 95 %** (₹1,050 /
+   ₹1,275 / ₹1,425), to your email.
 4. **Foundry resource and project:** ai.azure.com → Create project. Under the advanced options,
    choose `rg-thalam` and the same region. This creates a Foundry resource (kind AIServices) and a
    project in it.
@@ -102,8 +105,8 @@ has moved, follow the step's intent and note the new label here.
      Cosmos DB, AI Search and Storage, all billed by the hour.
 
    An idle resource with no deployment costs nothing.
-5. **Budget `thalam-model`:** monthly, **$20** (ADR-0008's model cap), scope `rg-thalam` with a
-   filter on the Foundry resource. Alerts at 50 %, 80 % and 100 %.
+5. **Budget `thalam-model`:** monthly, **₹1,000** (ADR-0013's model budget), scope `rg-thalam`
+   with a filter on the Foundry resource. Alerts at 50 %, 80 % and 100 %.
 6. **Deploy Claude:** in the project → Model catalog → the current **Claude Haiku** → Deploy →
    **Global Standard**.
    - Accept the Azure Marketplace offer when asked. Claude is billed in Claude Consumption Units

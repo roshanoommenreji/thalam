@@ -59,7 +59,7 @@ Architecture: [overview](docs/architecture/overview.md). What already exists:
 | | |
 |---|---|
 | **Phase** | 0 — Foundations, started 2026-11-18 |
-| **Decided** | Name Thalam, key `THL`; budget plan $50, brake $95; local + hosted model router, hosted on Claude in Microsoft Foundry; Azure, not AWS (ADR-0012); web chat + Slack; Jira Cloud and ServiceNow PDI sandboxes |
+| **Decided** | Name Thalam, key `THL`; budget at most ₹1,500 a month, the model ₹1,000 (ADR-0013); local + hosted model router, hosted on Claude in Microsoft Foundry; Azure, not AWS (ADR-0012); web chat + Slack; Jira Cloud and ServiceNow PDI sandboxes |
 | **Running cost** | $0 — nothing provisioned |
 
 ## Repository map

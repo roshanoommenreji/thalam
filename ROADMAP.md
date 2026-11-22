@@ -18,7 +18,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [x] Platform switch: Microsoft Foundry and Azure replace the direct Anthropic API and AWS
       ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md), 2026-11-22)
 - [x] **Decisions closed 2026-11-18:**
-  - D-1 Cost: plan $50, alarms $70 / $85, brake $95 ([ADR-0008](docs/adr/0008-cost-ceiling.md))
+  - D-1 Cost: plan $50, alarms $70 / $85, brake $95 ([ADR-0008](docs/adr/0008-cost-ceiling.md));
+    since 2026-11-22 in rupees: at most ₹1,500 a month, the model ₹1,000 ([ADR-0013](docs/adr/0013-cost-ceiling-1500-inr.md))
   - D-2 Name **Thalam**, Jira key **THL** ([ADR-0009](docs/adr/0009-name-and-jira-key.md))
   - D-3 Model: local + hosted router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md));
     hosted is Claude on Microsoft Foundry since 2026-11-22 ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
@@ -33,8 +34,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
       workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group
 - [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
 - [ ] Jira project + epics mirroring this roadmap
-- [ ] Azure budgets **before** the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the
-      model (ADR-0012; Azure has no hard cap, so the router's cap is the brake from Phase 2)
+- [ ] Azure budgets **before** the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on
+      the model (ADR-0013; Azure has no hard cap, so the router's cap is the brake from Phase 2)
 
 **Exit gate:** sandboxes reachable with read-only tokens; CI green on an empty package.
 
@@ -58,7 +59,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [ ] Guardrails v1 ([ADR-0005](docs/adr/0005-layered-guardrails.md)): identity, input screen,
       untrusted-text handling, output schema and escaping
 - [ ] Model router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md)): Ollama locally, Claude
-      on Microsoft Foundry hosted, model IDs priced on the day, the $20 monthly cap in code
+      on Microsoft Foundry hosted, model IDs priced on the day, Haiku first, the $10 (about ₹950) monthly cap in code, and an
+      automated brake that removes the deployment at the ₹1,425 alert (ADR-0013)
 - [ ] Foundry IQ knowledge base (Free or Serverless tier only) for release policies, runbooks, CAB
       rules and freeze calendars; Postgres stays the record for the release graph (ADR-0012)
 - [ ] Tracing to Langfuse; token cost per conversation recorded
@@ -106,7 +108,9 @@ sandboxes; a denied proposal changes nothing.
 
 Kaval's path, moved to Azure ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)):
 
-1. Extend Phase 0's budgets to cover hosting and wire the $95 brake (stop staging).
+1. Extend Phase 0's budgets to cover hosting and wire the ₹1,425 brake (stop staging). Inside
+   ₹1,500 a month nothing can run all month (the smallest suitable Arm VM is about ₹4,700), so
+   hosting starts on demand and parks when idle, or stays on local k3d (ADR-0013).
 2. k3d, then k3s on a Cobalt Arm VM or AKS with an Arm node pool, chosen and priced on the day.
 3. Helm, Flux, staging on demand, signed images, promotion by digest, restore drills.
 4. Secrets move from `.env` to Azure Key Vault.

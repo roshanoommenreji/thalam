@@ -88,6 +88,8 @@ Facts checked on 2026-11-22 against Microsoft's documentation and the Azure reta
    - **Budget `thalam-total`:** $100 a month on Thalam's resource group, with alerts at 70, 85 and 95 %
      ($70 / $85 / $95, [ADR-0008](0008-cost-ceiling.md)).
    - **Budget `thalam-model`:** $20 a month on the model.
+   - *Amounts superseded 2026-11-22 by [ADR-0013](0013-cost-ceiling-1500-inr.md): the account bills in INR, so the budgets
+     are ₹1,500 (alerts at 70 / 85 / 95 %) and ₹1,000 on the model; the router's cap is $10.*
    - Both budgets exist before the model deployment.
    - The only Phase 0 model call is a free token count.
    - Azure has no hard cap, so the router's in-code monthly cap (Phase 2) is the real brake. A low
