@@ -7,6 +7,7 @@
 - **Amended after the pre-publication review:** 2026-11-18, approved by Roshan. R8 also fails a Built or Amended spec whose live lab still says `_not run yet_`: naming a requirement was enough for a lab to count as proof, so Built could pass with blank evidence
 - **Amended for the platform switch:** 2026-11-22, approved by Roshan. The hosted model moves to Claude on Microsoft Foundry ([ADR-0012](../adr/0012-microsoft-foundry-and-azure.md)); R13, open question 3, Out of scope, Numbers, Done when and the Phase 0 model note change
 - **Amended for the rupee ceiling:** 2026-11-22, approved by Roshan. The account bills in INR and the most he can spend is ₹1,500 a month, so the budgets are ₹1,500 and ₹1,000 ([ADR-0013](../adr/0013-cost-ceiling-1500-inr.md)); R13, open question 3 and Numbers change
+- **Amended during the sandbox sign-ups:** 2026-11-22, approved by Roshan. R12's channel is `#thalam-releases`: Slack refuses a channel named like a user, the bot user is named `thalam`, and Slack does not rename a bot user that already exists. The rule is unchanged: one channel only
 
 > One page. `CLAUDE.md` wins over anything written here. Drafted through `superpowers:brainstorming`
 > on 2026-11-18 ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)).
@@ -62,7 +63,7 @@ file (CLAUDE.md rule 6).
 | SPEC-001-R9 | A `THL` planning project exists on the existing Jira site with one epic per roadmap phase, and no bot account on that site | live: `docs/labs/00-foundations.md` |
 | SPEC-001-R10 | The sandbox Jira site's read token (scoped to read, or an OAuth app with read scopes if scoped tokens are unavailable) can read the site, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R11 | The ServiceNow read user (`snc_read_only`) can read `change_request`, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
-| SPEC-001-R12 | The Slack app's token passes `auth.test` and the app is a member of `#thalam` only | `scripts/dev/check_sandboxes.py` |
+| SPEC-001-R12 | The Slack app's token passes `auth.test` and the app is a member of `#thalam-releases` only | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R13 | The Claude deployment on Microsoft Foundry answers a token-count call with the key in `.env`, and Azure budgets exist before it: ₹1,500 / month on Thalam's resource group (alerts 70 / 85 / 95 %) and ₹1,000 / month on the model | `scripts/dev/check_sandboxes.py`, live: `docs/labs/00-foundations.md` |
 
 **How the check works (R8).** `scripts/dev/spec_coverage.py` reads `docs/specs/SPEC-*.md` (not the

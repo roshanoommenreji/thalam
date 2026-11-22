@@ -2145,8 +2145,8 @@ with:
 - [x] Public repo `thalam`, ruleset on `main`, CI (ruff, mypy, pytest, gitleaks, CodeQL, Dependabot)
       ([ADR-0011](docs/adr/0011-phase-0-shape.md))
 - [x] Jira: `THL` planning project + epics on the existing site; a separate sandbox site with a
-      read-only scoped token; ServiceNow PDI with an `snc_read_only` user; Slack app in `#thalam`;
-      Claude on Microsoft Foundry in Thalam's own resource group ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
+      read-only scoped token; ServiceNow PDI with an `snc_read_only` user; Slack app in `#thalam-releases`
+      only; Claude on Microsoft Foundry in Thalam's own resource group ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
 - [x] Azure budgets before the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on the model
 - [ ] SPEC-002 (Phase 1) drafted and approved before any Phase 1 code
 ```
