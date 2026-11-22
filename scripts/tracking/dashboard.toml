@@ -1,0 +1,65 @@
+# Configuration for scripts/tracking/dashboard.py, Kaval's dashboard.toml in shape.
+#
+# Everything the dashboard cannot derive from the repository lives here: what each phase is for,
+# what the system is made of, and links. Status is NEVER recorded in this file. ROADMAP.md says
+# what is done, the specs and labs say what is proven, Jira says where each story is, and
+# infra/modules/azure-guardrails/guardrails.json holds every cost number.
+#
+# This file is public (CLAUDE.md rule 6): no instance address, resource name or ID. Jira links
+# come from the saved copy, docs/jira-stories.json, which is never committed.
+
+[project]
+name    = "Thalam"
+native  = "താളം"
+tagline = "the beat that keeps the ensemble in time"
+repo    = "https://github.com/roshanoommenreji/thalam"
+branch  = "main"
+
+# What each phase is FOR, in two plain sentences, for the top of its panel (Kaval KAV-145).
+# Never how far it has got: that is ROADMAP.md's job.
+[phases]
+"0" = "Everything later phases stand on: a public repo with CI, a check that every requirement has a test, read-only sandboxes, and the Azure cost guardrails. None of it is the product yet."
+"1" = "The release graph on a laptop: components, dependencies, releases and calendar windows in Postgres, loaded from a fixture company of about eight services. It answers what must ship first from the database alone, with no model."
+"2" = "A chat agent that can read everything and write nothing: LangGraph with read-only tools, the guard layers, the model router and Foundry IQ for documents. Its evals, planted injections included, gate CI."
+"3" = "The only way anything changes. The agent files a proposal, policy classes it, a person approves in Slack, and the executor creates the Jira version and the ServiceNow change."
+"4" = "Checks as code before a release goes out: CI, scope, scans, signed images, upstream dependencies, the change window, freezes and the rollback plan. It ends in a go or no-go proposal."
+"5" = "Release notes in which every line cites its source, written for engineers, customers and the CAB. A release calendar with freeze windows, an iCal feed and a weekly digest."
+"6" = "Watching a release after it ships against its pre-release baseline, then proposing to close it or roll it back. DORA's four key metrics per team."
+"7" = "Running on Azure: Kaval's Kubernetes path with Helm, Flux, signed images and promotion by digest. Hosting runs on demand, inside the monthly ceiling."
+"8" = "Hardening before v1 is called done: a threat model, a red-team pass against OWASP's LLM and agentic lists, and a final access review."
+
+# The parts of the system, their flows, Azure and DevOps: docs/architecture/architecture.toml.
+
+# The requirements the Cost view lists as Thalam's cost guardrails (ADR-0014).
+[cost]
+guardrail_requirements = ["SPEC-001-R13", "SPEC-001-R14", "SPEC-001-R15", "SPEC-001-R16", "SPEC-001-R17", "SPEC-001-R18", "SPEC-001-R19", "SPEC-001-R20"]
+
+[[links]]
+label = "GitHub repository"
+url   = "https://github.com/roshanoommenreji/thalam"
+note  = "Public since 2026-11-18. main takes pull requests only, behind five required checks."
+
+[[links]]
+label = "Roadmap"
+url   = "https://github.com/roshanoommenreji/thalam/blob/main/ROADMAP.md"
+note  = "The record of what is done. This page only reflects it."
+
+[[links]]
+label = "Lab 00: foundations"
+url   = "https://github.com/roshanoommenreji/thalam/blob/main/docs/labs/00-foundations.md"
+note  = "Every live proof of SPEC-001, written so a stranger could repeat it."
+
+[[links]]
+label = "Azure portal: Cost Management"
+url   = "https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/costanalysis"
+note  = "Cost analysis and budgets for Thalam's resource group. Cost data lags up to three days."
+
+[[links]]
+label = "Microsoft Foundry portal"
+url   = "https://ai.azure.com/"
+note  = "The Foundry account and project. The Claude deployment is parked unless you are using it."
+
+[[links]]
+label = "Kaval, the sibling"
+url   = "https://github.com/roshanoommenreji/kaval"
+note  = "The ops agent Thalam copies its stack, safety split and documentation discipline from."

@@ -2182,6 +2182,13 @@ Phase 7.
 (The planning-board line near the top, which linked a claude.ai artifact public readers cannot
 open, was already replaced on 2026-11-18 by Roshan's call; nothing to do there.)
 
+*Partly done early, 2026-11-22 (THL-25, Roshan's call):* the requirement check, sign-up, repo,
+Jira and budget lines are already ticked, and a ticked dashboard line follows them. The block
+below no longer matches. What is left for this step:
+- tick the SPEC line once SPEC-002 is approved;
+- tick the guardrails line once R20 is recorded;
+- mark the phase `[x]`.
+
 Replace this block of Phase 0 lines (keep the lines above it unchanged). It is the block as
 THL-22 and THL-23 left it on 2026-11-22:
 

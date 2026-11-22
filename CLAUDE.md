@@ -183,10 +183,14 @@ Same ten items as Kaval's CLAUDE.md, adapted, plus a spec step:
 3. ADR in `docs/adr/` if a decision was made
 4. Entry appended to `docs/journal/YYYY-MM-DD.md`
 5. Cost impact noted in `docs/cost/` if spend changed (including model tokens)
-6. `docs/architecture/overview.md` updated if a component was added, removed or rewired
+6. `docs/architecture/overview.md` and `docs/architecture/architecture.toml` updated if a
+   component, flow, Azure resource or pipeline stage was added, removed or rewired
 7. Deployed to `staging` and verified before `prod`
 8. Jira reflects reality
-9. Generated mirrors (dashboard, Confluence) regenerated if their sources changed
+9. Generated mirrors regenerated if their sources changed. The dashboard: `make dashboard`
+   (`make dashboard-azure` after any Azure change, and the Jira copy refreshed when stories
+   moved), then the page republished to its artifact. Its link stays out of this public repo.
+   A stale mirror misleads, so this happens at the end of every story, unasked
 10. Documentation sweep, unasked, when a fact changes
 
 ---

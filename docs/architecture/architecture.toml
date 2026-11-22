@@ -1,0 +1,1685 @@
+# Thalam's architecture, as data (Kaval's architecture.toml, for Thalam).
+#
+# scripts/tracking/dashboard.py draws this into the dashboard's Architecture, Flows, Azure, DevOps
+# and Glossary views. Each node's state (built / being built / planned) comes from its phase's
+# marker in ROADMAP.md, and each Azure node's from the saved Azure copy. Nothing here records
+# status.
+#
+# When a component is added, removed or rewired, update this file in the same change. That is a
+# Definition of Done item (6), and it is why the diagrams stay true.
+#
+# Public file (CLAUDE.md rule 6): no instance address, resource name that is not already in
+# guardrails.json, or ID. Names and numbers from guardrails.json are written as {placeholders}
+# and filled in when the page is built, so a changed number cannot leave a stale copy here:
+#   {ceiling} {plan} {total_amount} {model_amount} {total_brake} {model_brake}
+#   {total_brake_pct} {model_brake_pct} {nightly} {capacity} {cap} {region} {lag_days} {model}
+#   {sku} {resource_group} {assignment} {action_group} {runbook} {schedule} {automation_account}
+#
+# col and row place a node on its diagram's grid; both accept fractions.
+# Node kinds:  source | service | store | guard | model | surface | target | platform
+# Edge kinds:  data (solid) | control (dashed) | write (a write outside Thalam, executor only)
+
+# ═══ ARCHITECTURE: what Thalam is made of, and what talks to what ═══════════════════════════════
+
+[[architecture.node]]
+id = "jira-in"
+label = "Jira"
+sub = "issues, versions"
+kind = "source"
+col = 0
+row = 0
+access = "read-only token (sandbox site)"
+definition = "Where teams track the work going into each release. Thalam reads issues, fixVersions and their status; it never writes with this token."
+inputs = ["Issues, fixVersions, sprints, links between issues"]
+outputs = ["Release scope: which issues are in which version, and whether each is done"]
+
+[[architecture.node]]
+id = "git"
+label = "Git / GitHub"
+sub = "commits, PRs"
+kind = "source"
+col = 1
+row = 0
+access = "read-only token"
+definition = "The code behind each release. Merged pull requests become release-note lines, each citing its PR."
+inputs = ["Commits, tags, merged pull requests"]
+outputs = ["What changed between two versions, and who approved it"]
+
+[[architecture.node]]
+id = "cicd"
+label = "CI/CD"
+sub = "runs, artifacts"
+kind = "source"
+col = 2
+row = 0
+access = "read-only token"
+definition = "Build and deploy pipelines. Their results feed the readiness gate: a release commit must be green."
+inputs = ["Pipeline runs, test reports, scan results, image digests"]
+outputs = ["Pass or fail per release commit; signed image and SBOM present or not"]
+
+[[architecture.node]]
+id = "prom"
+label = "Prometheus"
+sub = "golden signals"
+kind = "source"
+col = 3
+row = 0
+access = "read-only HTTP queries"
+definition = "Metrics for each service: latency, traffic, errors and saturation. The post-release watch compares them with the pre-release baseline."
+inputs = ["Scraped metrics from every service"]
+outputs = ["Range queries over the watch window, and the baseline before it"]
+
+[[architecture.node]]
+id = "snow-in"
+label = "ServiceNow"
+sub = "change requests"
+kind = "source"
+col = 4
+row = 0
+access = "snc_read_only + itil, Machine identity"
+definition = "The change-management record. Thalam reads whether a change is approved and inside its window."
+inputs = ["Change requests, their state, approval and planned window"]
+outputs = ["Approved or not; inside the window or not"]
+
+[[architecture.node]]
+id = "kaval"
+label = "Kaval"
+sub = "incidents (FS-1)"
+kind = "source"
+col = 5
+row = 0
+access = "MCP / HTTPS, read-only"
+definition = "The sibling ops agent. During a post-release window its incidents are a second opinion on whether the release hurt something (future scope FS-1)."
+inputs = ["Incidents and their fingerprints"]
+outputs = ["Incidents that overlap a release's watch window"]
+
+[[architecture.node]]
+id = "catalog"
+label = "Backstage catalog"
+sub = "catalog-info.yaml"
+kind = "source"
+phase = 1
+col = 6
+row = 0
+access = "files in each repository"
+definition = "Each service declares itself, its owner team and what it depends on in a catalog-info.yaml file. That is where the dependency graph comes from."
+inputs = ["One catalog-info.yaml per component"]
+outputs = ["Components, owners, and component-to-component dependencies"]
+
+[[architecture.node]]
+id = "collector"
+label = "Collector"
+sub = "events in"
+kind = "service"
+phase = 1
+col = 3
+row = 1
+access = "read-only clients only"
+definition = "Pulls from every source on a schedule and writes what it found into the release graph as events. It holds no write credential to any outside system."
+inputs = ["Every source above, read-only"]
+outputs = ["Rows in the release graph: components, dependencies, releases, release items"]
+
+[[architecture.node]]
+id = "graph"
+label = "Release graph"
+sub = "Postgres + pgvector"
+kind = "store"
+phase = 1
+col = 3
+row = 2
+access = "Thalam's own database"
+definition = "The system of record: components, dependencies, releases, calendar windows, checks, proposals and the audit trail, append-only like Kaval's. LangGraph's checkpoints live here too."
+inputs = ["Collector events", "Check results", "Proposals, decisions, executions, outcomes"]
+outputs = ["Answers to dependency questions (upstream, downstream, release order by topological sort)"]
+
+[[architecture.node]]
+id = "langfuse"
+label = "Langfuse"
+sub = "traces, token cost"
+kind = "platform"
+phase = 2
+col = 0.5
+row = 2
+access = "write-only from Thalam's code"
+definition = "Where every model call is traced, in OpenTelemetry's GenAI terms: prompt, answer, tokens, cost and every guardrail verdict (ADR-0004)."
+inputs = ["Spans from the agent and the router"]
+outputs = ["Cost per conversation; a record of what each guard layer decided"]
+
+[[architecture.node]]
+id = "iq"
+label = "Foundry IQ"
+sub = "policies, runbooks"
+kind = "store"
+phase = 2
+col = 4.6
+row = 2
+access = "read-only retrieval"
+definition = "Azure's knowledge layer (formerly Azure AI Search), on the Free or Serverless tier only. It serves release policies, runbooks, CAB rules and freeze calendars (ADR-0012)."
+inputs = ["Policy documents, runbooks, freeze calendars"]
+outputs = ["Passages the agent cites when it answers"]
+
+[[architecture.node]]
+id = "ollama"
+label = "Ollama"
+sub = "local small model"
+kind = "model"
+phase = 2
+col = 6
+row = 2.4
+access = "local only"
+definition = "A small model on the laptop for guard checks, classification and offline eval runs. Free, and what the router falls back to when the hosted cap is reached (ADR-0006)."
+inputs = ["Short classification prompts"]
+outputs = ["Labels and verdicts"]
+
+[[architecture.node]]
+id = "guard"
+label = "Guard layers"
+sub = "in, screen, out"
+kind = "guard"
+phase = 2
+col = 1.5
+row = 3
+access = "a package every graph calls"
+definition = "Eight layers, each stopping a different failure: identity, input limits, input screen, untrusted text as data, tool allowlists, output checks, policy and approval, and evals as evidence. Each fails closed (ADR-0005)."
+inputs = ["Every request in, every model answer out"]
+outputs = ["A screened request or a plain refusal; a checked, escaped answer"]
+
+[[architecture.node]]
+id = "agent"
+label = "Agent"
+sub = "LangGraph graphs"
+kind = "service"
+phase = 2
+col = 3
+row = 3
+access = "read-only credentials; one write: a proposal row"
+definition = "The reasoning part. Graphs for chat, readiness, release notes, the post-release watch and the CAB summary. It can read everything and change nothing (CLAUDE.md rule 3)."
+inputs = ["Questions from the gateway", "Release graph rows", "Foundry IQ passages", "Executor outcomes (to resume)"]
+outputs = ["Chat answers", "Proposals", "Traces"]
+
+[[architecture.node]]
+id = "router"
+label = "Model router"
+sub = "local or hosted"
+kind = "service"
+phase = 2
+col = 4.6
+row = 3
+access = "the Foundry key, from .env"
+definition = "Chooses the model for each call: Ollama for small checks, Claude for chat and writing. It holds the monthly spending cap in code, so it stops spend before Azure's late budgets notice (ADR-0006)."
+inputs = ["A prompt and what it is for"]
+outputs = ["A model answer, or a refusal once the cap is reached"]
+
+[[architecture.node]]
+id = "claude"
+label = "Claude on Foundry"
+sub = "{model}"
+kind = "model"
+phase = 0
+col = 6
+row = 3.4
+access = "API key in .env; never the executor's"
+definition = "The hosted model: {model} as a {sku} deployment at capacity {capacity}, in Thalam's own resource group. It exists only while it is used (`make foundry-up` / `foundry-down`); see the Azure view."
+inputs = ["Messages API calls from the router"]
+outputs = ["Answers, billed per token through Azure Marketplace"]
+
+[[architecture.node]]
+id = "people"
+label = "People"
+sub = "release managers"
+kind = "surface"
+col = 0
+row = 4.6
+access = "OIDC login"
+definition = "Release managers and engineers asking questions and approving proposals."
+inputs = ["Answers, approval cards"]
+outputs = ["Questions, approvals"]
+
+[[architecture.node]]
+id = "gateway"
+label = "Gateway + web chat"
+sub = "FastAPI"
+kind = "surface"
+phase = 2
+col = 1.5
+row = 4.6
+access = "front door; carries the user's identity"
+definition = "The web chat and its API. It logs people in, applies limits and attaches the user to every request (guard layers 1 and 2, ADR-0007)."
+inputs = ["Chat messages"]
+outputs = ["Requests to the agent, with identity", "Escaped answers back"]
+
+[[architecture.node]]
+id = "proposals"
+label = "Proposals"
+sub = "the only write"
+kind = "store"
+phase = 3
+col = 3
+row = 4.3
+access = "the agent inserts; nobody edits"
+definition = "A row saying what the agent wants done, why, and with what evidence. It is the agent's only output that can lead to a change."
+inputs = ["propose_* tool calls from the agent"]
+outputs = ["Rows for policy to classify"]
+
+[[architecture.node]]
+id = "policy"
+label = "Policy (OPA)"
+sub = "auto / ask / never"
+kind = "guard"
+phase = 3
+col = 4.6
+row = 4.3
+access = "rules in policy/, versioned"
+definition = "Classes every proposed action. Everything starts as ask; never includes releasing into a freeze window or closing a change as successful without a post-release check."
+inputs = ["A proposal"]
+outputs = ["auto, ask or never"]
+
+[[architecture.node]]
+id = "slack"
+label = "Slack approval"
+sub = "a person decides"
+kind = "surface"
+phase = 3
+col = 6
+row = 4.3
+access = "one channel: #thalam-releases"
+definition = "An approval card with a reminder, an escalation and an expiry (Kaval's pattern). The person's decision is recorded as a decision row."
+inputs = ["Proposals classed ask"]
+outputs = ["Approve or deny, with who and when"]
+
+[[architecture.node]]
+id = "executor"
+label = "Executor"
+sub = "the only writer"
+kind = "service"
+phase = 3
+col = 4.6
+row = 5.4
+access = "scoped bot accounts"
+definition = "The only part that writes to Jira, ServiceNow, Confluence, the calendar or Slack announcements, and only for a proposal that passed policy and, where asked, a person. Every call carries an idempotency key."
+inputs = ["Approved decisions"]
+outputs = ["Changes in outside systems", "Execution and outcome rows that resume the graph"]
+
+[[architecture.node]]
+id = "jira-out"
+label = "Jira fixVersion"
+kind = "target"
+phase = 3
+col = 1.4
+row = 6.5
+access = "executor's bot account"
+definition = "The release in Jira, created and later released by the executor."
+inputs = ["Create and release calls"]
+outputs = ["A version teams can see"]
+
+[[architecture.node]]
+id = "snow-out"
+label = "ServiceNow change"
+kind = "target"
+phase = 3
+col = 2.8
+row = 6.5
+access = "executor's bot account"
+definition = "The change request, opened before a release and closed after its post-release check (Change Management API)."
+inputs = ["Create and close calls"]
+outputs = ["A change the CAB can approve"]
+
+[[architecture.node]]
+id = "confluence"
+label = "Release notes"
+sub = "Confluence"
+kind = "target"
+phase = 5
+col = 4.2
+row = 6.5
+access = "executor's bot account"
+definition = "Release notes in which every line cites a Jira key or a PR (the grounding check), for engineers, customers and the CAB."
+inputs = ["Approved drafts"]
+outputs = ["Published notes"]
+
+[[architecture.node]]
+id = "calendar"
+label = "Release calendar"
+sub = "iCal feed"
+kind = "target"
+phase = 5
+col = 5.6
+row = 6.5
+access = "executor"
+definition = "Every release and freeze window, published as an iCal (RFC 5545) feed and a weekly digest."
+inputs = ["Releases and calendar windows"]
+outputs = ["A feed people subscribe to"]
+
+[[architecture.node]]
+id = "slack-out"
+label = "Announcements"
+sub = "Slack"
+kind = "target"
+phase = 3
+col = 7
+row = 6.5
+access = "executor's bot"
+definition = "Release announcements in #thalam-releases, posted only by the executor."
+inputs = ["Approved announcements"]
+outputs = ["A message people read"]
+
+[[architecture.edge]]
+from = "jira-in"
+to = "collector"
+label = "issues"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "git"
+to = "collector"
+label = "PRs"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "cicd"
+to = "collector"
+label = "runs"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "prom"
+to = "collector"
+label = "metrics"
+kind = "data"
+at = 0.45
+
+[[architecture.edge]]
+from = "snow-in"
+to = "collector"
+label = "changes"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "kaval"
+to = "collector"
+label = "incidents"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "catalog"
+to = "collector"
+label = "components"
+kind = "data"
+at = 0.4
+
+[[architecture.edge]]
+from = "collector"
+to = "graph"
+label = "writes events"
+kind = "data"
+
+[[architecture.edge]]
+from = "agent"
+to = "graph"
+label = "reads"
+kind = "data"
+
+[[architecture.edge]]
+from = "agent"
+to = "iq"
+label = "retrieves"
+kind = "data"
+
+[[architecture.edge]]
+from = "agent"
+to = "langfuse"
+label = "traces"
+kind = "data"
+at = 0.55
+
+[[architecture.edge]]
+from = "guard"
+to = "agent"
+label = "screens"
+kind = "control"
+
+[[architecture.edge]]
+from = "agent"
+to = "router"
+label = "prompts"
+kind = "data"
+
+[[architecture.edge]]
+from = "router"
+to = "ollama"
+label = "checks"
+kind = "data"
+
+[[architecture.edge]]
+from = "router"
+to = "claude"
+label = "chat, writing"
+kind = "data"
+
+[[architecture.edge]]
+from = "people"
+to = "gateway"
+label = "ask"
+kind = "data"
+
+[[architecture.edge]]
+from = "gateway"
+to = "agent"
+label = "with identity"
+kind = "data"
+at = 0.45
+
+[[architecture.edge]]
+from = "agent"
+to = "proposals"
+label = "files"
+kind = "control"
+
+[[architecture.edge]]
+from = "proposals"
+to = "policy"
+label = "classify"
+kind = "control"
+
+[[architecture.edge]]
+from = "policy"
+to = "slack"
+label = "ask"
+kind = "control"
+
+[[architecture.edge]]
+from = "slack"
+to = "executor"
+label = "approved"
+kind = "control"
+
+[[architecture.edge]]
+from = "executor"
+to = "agent"
+label = "outcome resumes"
+kind = "control"
+at = 0.3
+
+[[architecture.edge]]
+from = "executor"
+to = "jira-out"
+label = "version"
+kind = "write"
+at = 0.72
+
+[[architecture.edge]]
+from = "executor"
+to = "snow-out"
+label = "change"
+kind = "write"
+at = 0.72
+
+[[architecture.edge]]
+from = "executor"
+to = "confluence"
+label = "notes"
+kind = "write"
+at = 0.6
+
+[[architecture.edge]]
+from = "executor"
+to = "calendar"
+label = "windows"
+kind = "write"
+at = 0.62
+
+[[architecture.edge]]
+from = "executor"
+to = "slack-out"
+label = "announce"
+kind = "write"
+at = 0.72
+
+# ═══ FLOWS: what happens, step by step, for the things Thalam does ═════════════════════════════
+# Each flow is drawn as a sequence diagram: one column per participant, one arrow per step.
+# Step kinds: call (solid) | return (dashed) | write (a write outside Thalam) | self (a note)
+
+[[flow]]
+id = "flow-ask"
+title = "Ask a question in chat"
+phase = 2
+trigger = "Someone asks in the web chat: \"What is going out on Thursday?\""
+outcome = "An answer that cites its sources. Nothing outside Thalam changed: the agent holds no write credential."
+lanes = [["people", "Person"], ["gateway", "Gateway"], ["guard", "Guard"], ["agent", "Agent"], ["graph", "Release graph"], ["iq", "Foundry IQ"], ["router", "Router"], ["claude", "Claude"]]
+steps = [
+  { from = "people", to = "gateway", kind = "call", label = "question", note = "Through the web chat (ADR-0007). The person is logged in with OIDC." },
+  { from = "gateway", to = "guard", kind = "call", label = "who, how much", note = "Guard layers 1 and 2: identity, a size cap, a rate limit and a token budget per person and per conversation." },
+  { from = "guard", to = "agent", kind = "call", label = "screened question", note = "Layer 3: personal data redacted, a prompt-injection classifier, and a topic rail (release management only). A blocked request gets a plain reply, never a silent drop." },
+  { from = "agent", to = "graph", kind = "call", label = "Thursday's releases", note = "Read-only SQL over release, release_item and calendar_window." },
+  { from = "graph", to = "agent", kind = "return", label = "rows", note = "Releases, their components, owners and dependencies." },
+  { from = "agent", to = "iq", kind = "call", label = "freeze rules", note = "Foundry IQ returns the passages of the freeze calendar and CAB rules that apply." },
+  { from = "agent", to = "router", kind = "call", label = "prompt", note = "Layer 4: Jira text and change notes are flattened, capped and wrapped as labelled data, never as instructions." },
+  { from = "router", to = "claude", kind = "call", label = "Messages API", note = "Haiku first. Above the monthly cap the router refuses and falls back to Ollama." },
+  { from = "claude", to = "agent", kind = "return", label = "draft answer", note = "Billed per token on Thalam's Azure bill." },
+  { from = "agent", to = "guard", kind = "call", label = "check answer", note = "Layer 6: schema validation, a secret and personal-data scan, and a grounding check that each claim cites a source." },
+  { from = "guard", to = "people", kind = "return", label = "escaped answer", note = "Back through the gateway, escaped for HTML. The whole exchange is traced to Langfuse with its token cost." },
+]
+
+[[flow]]
+id = "flow-change"
+title = "Create the Jira release and the ServiceNow change"
+phase = 3
+trigger = "The agent decides a release needs its Jira version and its change request."
+outcome = "A Jira version and a ServiceNow change exist, each created once. A denied or expired proposal changes nothing."
+lanes = [["agent", "Agent"], ["proposals", "Proposals"], ["policy", "Policy (OPA)"], ["slack", "Slack card"], ["approver", "Approver"], ["executor", "Executor"], ["jira-out", "Jira"], ["snow-out", "ServiceNow"]]
+steps = [
+  { from = "agent", to = "proposals", kind = "call", label = "propose", note = "A schema-valid proposal row: what to create, why, and the evidence. This is the agent's only write." },
+  { from = "agent", to = "agent", kind = "self", label = "interrupt()", note = "The graph pauses and saves its checkpoint. interrupt() pauses; it never acts." },
+  { from = "proposals", to = "policy", kind = "call", label = "classify", note = "OPA returns auto, ask or never. Every action starts as ask." },
+  { from = "policy", to = "slack", kind = "call", label = "ask", note = "An approval card in #thalam-releases." },
+  { from = "slack", to = "approver", kind = "call", label = "card", note = "With a reminder, an escalation and an expiry (Kaval ADR-0026, ADR-0048)." },
+  { from = "approver", to = "slack", kind = "return", label = "approve", note = "Recorded as a decision row: who, when, and what they saw." },
+  { from = "slack", to = "executor", kind = "call", label = "decision", note = "The executor acts only on a decision that passed policy and, here, a person." },
+  { from = "executor", to = "jira-out", kind = "write", label = "fixVersion", note = "Scoped bot account. An idempotency key means a retry never creates a second version." },
+  { from = "executor", to = "snow-out", kind = "write", label = "change request", note = "Through ServiceNow's Change Management API." },
+  { from = "executor", to = "agent", kind = "return", label = "outcome", note = "Execution and outcome rows are written; the graph resumes from its checkpoint." },
+]
+
+[[flow]]
+id = "flow-readiness"
+title = "The pre-release readiness gate"
+phase = 4
+trigger = "A release's planned window is near."
+outcome = "A readiness report for the release and a go or no-go proposal for a person to decide."
+lanes = [["agent", "Readiness graph"], ["cicd", "CI/CD"], ["jira-in", "Jira"], ["graph", "Release graph"], ["snow-in", "ServiceNow"], ["iq", "Freeze calendar"], ["proposals", "Proposals"]]
+steps = [
+  { from = "agent", to = "cicd", kind = "call", label = "commit green?", note = "CI is green on the release commit; the security scan has no criticals; the image is signed and has an SBOM." },
+  { from = "agent", to = "jira-in", kind = "call", label = "scope done?", note = "Every issue in the fixVersion is done." },
+  { from = "agent", to = "graph", kind = "call", label = "upstream ready?", note = "Each upstream dependency is released or compatible; no dependent component shares the window (conflict detection)." },
+  { from = "agent", to = "snow-in", kind = "call", label = "change approved?", note = "The change is approved and the release sits inside its window." },
+  { from = "agent", to = "iq", kind = "call", label = "in a freeze?", note = "Not inside a freeze or blackout window; a rollback plan is present." },
+  { from = "agent", to = "graph", kind = "call", label = "check results", note = "Each check and its result is recorded (check, check_result)." },
+  { from = "agent", to = "proposals", kind = "call", label = "go / no-go", note = "The report becomes a proposal. A person decides, through the approval flow." },
+]
+
+[[flow]]
+id = "flow-watch"
+title = "Watch a release after it ships"
+phase = 6
+trigger = "The executor records that a release was deployed."
+outcome = "Every release ends closed or rolled back, by a proposal a person approved. DORA's four key metrics per team come from the same records."
+lanes = [["executor", "Executor"], ["agent", "Watch graph"], ["prom", "Prometheus"], ["kaval", "Kaval"], ["proposals", "Proposals"], ["slack", "Slack card"]]
+steps = [
+  { from = "executor", to = "agent", kind = "call", label = "deployed", note = "The outcome row starts the watch window." },
+  { from = "agent", to = "prom", kind = "call", label = "signals vs baseline", note = "Latency, traffic, errors and saturation against the pre-release baseline, for the whole window." },
+  { from = "kaval", to = "agent", kind = "call", label = "incidents", note = "Kaval's incidents in the window, as a second opinion (future scope FS-1)." },
+  { from = "agent", to = "agent", kind = "self", label = "healthy?", note = "Healthy or degraded, with the evidence." },
+  { from = "agent", to = "proposals", kind = "call", label = "close or roll back", note = "Healthy: release the Jira version and close the change as successful. Degraded: roll back and close the change with issues." },
+  { from = "proposals", to = "slack", kind = "call", label = "approval card", note = "Through policy, as every action is. Closing as successful without this check is classed never." },
+]
+
+[[flow]]
+id = "flow-brake"
+title = "The cost brake fires"
+phase = 0
+trigger = "Spend reaches a budget's brake line, or it is {nightly}."
+outcome = "No deployment is left to bill. `make foundry-up` refuses while a budget is past its brake line. Proven live on 2026-11-22 (SPEC-001-R16)."
+lanes = [["deployment", "Claude deployment"], ["cost", "Cost Management"], ["budget", "Budgets"], ["ag", "Action group"], ["owner", "Owner's e-mail"], ["runbook", "Brake runbook"], ["schedule", "Nightly schedule"]]
+steps = [
+  { from = "deployment", to = "cost", kind = "call", label = "token charges", note = "Billed per token. Cost data can arrive up to {lag_days} days late, which is why the brake also runs every night." },
+  { from = "cost", to = "budget", kind = "call", label = "spend", note = "Actual spend this month on {resource_group}, and on the Foundry account alone for the model budget." },
+  { from = "budget", to = "owner", kind = "call", label = "each alert", note = "Every alert line e-mails the owner directly." },
+  { from = "budget", to = "ag", kind = "call", label = "brake line", note = "{total_brake_pct}% of the total ({total_brake}) or {model_brake_pct}% of the model budget ({model_brake}) notifies the action group {action_group}." },
+  { from = "ag", to = "owner", kind = "call", label = "notice", note = "The action group's e-mail receiver, verified with a one-time code (ADR-0014, finding 4)." },
+  { from = "ag", to = "runbook", kind = "call", label = "webhook", note = "Its runbook receiver starts {runbook} in Azure Automation." },
+  { from = "schedule", to = "runbook", kind = "call", label = "every night", note = "{schedule} also starts it at {nightly}, whatever the spend." },
+  { from = "runbook", to = "deployment", kind = "write", label = "DELETE", note = "Its managed identity holds a custom role: read the Foundry account, read and delete its deployments, nothing more." },
+]
+
+[[flow]]
+id = "flow-park"
+title = "Park and unpark the deployment"
+phase = 0
+trigger = "Roshan needs Claude for a session."
+outcome = "The deployment exists only while it is used, and the sweep proves it is gone at the end of the session (SPEC-001-R14, R17)."
+lanes = [["roshan", "Roshan's laptop"], ["park", "foundry_park.py"], ["checks", "Guardrail checks"], ["foundry", "Foundry account"], ["sweep", "azure_sweep.py"]]
+steps = [
+  { from = "roshan", to = "park", kind = "call", label = "make foundry-up", note = "Reads the account and deployment names from .env, and the model from guardrails.json." },
+  { from = "park", to = "checks", kind = "call", label = "guardrails hold?", note = "Policy {assignment} enforced; both budgets with every alert; the brake line wired to the action group; the nightly schedule linked; no budget past its brake line." },
+  { from = "checks", to = "park", kind = "return", label = "all PASS", note = "Any FAIL means REFUSED: the deployment stays parked." },
+  { from = "park", to = "foundry", kind = "write", label = "PUT deployment", note = "{model}, {sku}, capacity {capacity}, with Anthropic's attestation fields (modelProviderData) from .env." },
+  { from = "foundry", to = "park", kind = "return", label = "Succeeded", note = "Polled from Creating to Succeeded. A deployment that is Deleting or Creating means wait." },
+  { from = "roshan", to = "roshan", kind = "self", label = "use Claude", note = "Today the sandbox check's token count; from Phase 2, the router." },
+  { from = "roshan", to = "park", kind = "call", label = "make foundry-down", note = "Always allowed, even with a guardrail broken." },
+  { from = "park", to = "foundry", kind = "write", label = "DELETE", note = "Every deployment on the account is deleted. Nothing is lost: it bills per token." },
+  { from = "roshan", to = "sweep", kind = "call", label = "make azure-sweep", note = "Read-only, at the end of every session." },
+  { from = "sweep", to = "roshan", kind = "return", label = "CLEAN", note = "Parked; every resource type on the list; nothing tagged project=thalam outside the group; the guardrails present." },
+]
+
+# ═══ AZURE: what exists in Azure, how the guardrails are wired, and what each piece costs ═══════
+# live: how the page decides whether a node exists, from the saved Azure copy:
+#   type:<Azure type> (counted in the resource group) · budget:<name> · check:<start of a check's
+#   name> · deployment · "" (not read; managed by Terraform)
+
+[[azure.node]]
+id = "laptop"
+label = "Roshan's laptop"
+sub = "az CLI, Terraform"
+kind = "outside"
+col = 0
+row = 0
+type = "—"
+name = "—"
+created_by = "—"
+cost = "₹0"
+live = ""
+definition = "Where every change to Azure starts: `make guardrails-plan` / `guardrails-apply`, `make foundry-up` / `foundry-down`, and the read-only `make azure-sweep` and `make dashboard-azure`."
+inputs = ["guardrails.json, .env (names and attestation fields, read as data)"]
+outputs = ["Terraform plans and applies; the deployment's PUT and DELETE; read-only checks"]
+
+[[azure.node]]
+id = "policy"
+label = "Azure Policy"
+sub = "{assignment}"
+kind = "rg"
+col = 3
+row = 0
+type = "Microsoft.Authorization/policyAssignments"
+name = "{assignment}"
+created_by = "Terraform: azurerm_resource_group_policy_assignment.guardrails"
+cost = "₹0"
+live = "check:policy"
+requirement = "SPEC-001-R15"
+definition = "A policy set assigned to {resource_group} and enforced. It refuses any model but {model}, any deployment type but {sku}, capacity above {cap}, any region but {region}, and VMs, AKS, NAT gateways, application gateways and managed databases."
+inputs = ["Every create or update in the resource group"]
+outputs = ["Allowed, or RequestDisallowedByPolicy"]
+
+[[azure.node]]
+id = "app"
+label = "Thalam's router"
+sub = "Phase 2"
+kind = "outside"
+phase = 2
+col = 5.2
+row = 0
+type = "—"
+name = "—"
+created_by = "Phase 2"
+cost = "per token"
+live = ""
+definition = "From Phase 2 the model router calls the deployment through the Anthropic SDK's Foundry client, with its own monthly cap in code."
+inputs = ["Prompts from the agent"]
+outputs = ["Messages API calls to the deployment"]
+
+[[azure.node]]
+id = "project"
+label = "Foundry project"
+sub = "thalam"
+kind = "rg"
+col = 0
+row = 1
+type = "Microsoft.CognitiveServices/accounts/projects"
+name = "thalam"
+created_by = "Terraform: azurerm_cognitive_account_project.thalam"
+cost = "₹0"
+live = "type:Microsoft.CognitiveServices/accounts/projects"
+definition = "The Foundry project inside the account: where Foundry IQ knowledge bases and agents would live from Phase 2."
+inputs = ["—"]
+outputs = ["—"]
+
+[[azure.node]]
+id = "foundry"
+label = "Foundry account"
+sub = "AIServices, S0"
+kind = "rg"
+col = 1.5
+row = 1
+type = "Microsoft.CognitiveServices/accounts"
+name = "kept in .env (a resource's name is its address)"
+created_by = "Terraform: azurerm_cognitive_account.foundry"
+cost = "₹0 idle"
+live = "type:Microsoft.CognitiveServices/accounts"
+definition = "The Microsoft Foundry resource in {region}. It holds Thalam's one model deployment and nothing else, so its key reaches nothing but Thalam's model."
+inputs = ["Deployment PUT and DELETE from the laptop and the brake"]
+outputs = ["An endpoint for the Messages API"]
+
+[[azure.node]]
+id = "deployment"
+label = "Claude deployment"
+sub = "{model}"
+kind = "model"
+col = 3
+row = 1
+type = "Microsoft.CognitiveServices/accounts/deployments"
+name = "kept in .env"
+created_by = "make foundry-up (not Terraform)"
+cost = "per token; worst case in the Cost view"
+live = "deployment"
+requirement = "SPEC-001-R14"
+definition = "{model} on {sku} at capacity {capacity}: one request and a thousand tokens a minute per unit. Parked by default; it bills only for tokens, so deleting it costs nothing."
+inputs = ["Messages API calls"]
+outputs = ["Answers; token charges to Cost Management"]
+
+[[azure.node]]
+id = "costmgmt"
+label = "Cost Management"
+sub = "up to {lag_days} days late"
+kind = "outside"
+col = 5
+row = 1
+type = "—"
+name = "—"
+created_by = "Azure"
+cost = "₹0"
+live = ""
+definition = "Azure's billing data. Claude's tokens arrive through Azure Marketplace on the same bill, in rupees, and can take up to {lag_days} days to appear (SPEC-001-R20 checks where they land)."
+inputs = ["Usage from every resource"]
+outputs = ["Actual spend per budget"]
+
+[[azure.node]]
+id = "role"
+label = "Custom role"
+sub = "the brake's rights"
+kind = "rg"
+col = 1
+row = 2
+type = "Microsoft.Authorization/roleDefinitions"
+name = "Thalam deployment brake"
+created_by = "Terraform: azurerm_role_definition.brake + azurerm_role_assignment.brake"
+cost = "₹0"
+live = ""
+definition = "Three permissions: read the Foundry account, read its deployments, delete its deployments. Defined on the resource group and assigned on the account only, to the brake's managed identity."
+inputs = ["—"]
+outputs = ["The brake's right to delete, and nothing else"]
+
+[[azure.node]]
+id = "budget-model"
+label = "Budget: model"
+sub = "{model_amount}"
+kind = "rg"
+col = 4.4
+row = 2
+type = "Microsoft.Consumption/budgets"
+name = "thalam-model"
+created_by = "Terraform: azurerm_consumption_budget_resource_group.budget"
+cost = "₹0"
+live = "budget:thalam-model"
+requirement = "SPEC-001-R13"
+definition = "{model_amount} a month, filtered to the Foundry account's resource ID. Its brake line is {model_brake_pct}% ({model_brake})."
+inputs = ["Actual spend on the Foundry account"]
+outputs = ["Alert e-mails; the brake line notifies the action group"]
+
+[[azure.node]]
+id = "budget-total"
+label = "Budget: total"
+sub = "{total_amount}"
+kind = "rg"
+col = 5.8
+row = 2
+type = "Microsoft.Consumption/budgets"
+name = "thalam-total"
+created_by = "Terraform: azurerm_consumption_budget_resource_group.budget"
+cost = "₹0"
+live = "budget:thalam-total"
+requirement = "SPEC-001-R13"
+definition = "{total_amount} a month on everything in {resource_group}. Its brake line is {total_brake_pct}% ({total_brake})."
+inputs = ["Actual spend on the resource group"]
+outputs = ["Alert e-mails; the brake line notifies the action group"]
+
+[[azure.node]]
+id = "schedule"
+label = "Nightly schedule"
+sub = "{nightly}"
+kind = "rg"
+col = 0
+row = 3
+type = "Microsoft.Automation/automationAccounts/schedules"
+name = "{schedule}"
+created_by = "Terraform: azurerm_automation_schedule.nightly + job_schedule"
+cost = "₹0 (Automation's free minutes)"
+live = "check:brake: the runbook runs every night"
+definition = "Starts the brake every night at {nightly}, whatever the spend. It parks a forgotten deployment and runs the brake's whole path daily, so a broken brake shows up in a day."
+inputs = ["The clock"]
+outputs = ["A runbook job"]
+
+[[azure.node]]
+id = "runbook"
+label = "Brake runbook"
+sub = "Automation, Python"
+kind = "rg"
+col = 1.75
+row = 3
+type = "Microsoft.Automation/automationAccounts/runbooks"
+name = "{runbook} in {automation_account}"
+created_by = "Terraform: azurerm_automation_runbook.brake (brake/brake_runbook.py)"
+cost = "₹0 (Automation's free minutes)"
+live = "type:Microsoft.Automation/automationAccounts/runbooks"
+requirement = "SPEC-001-R16"
+definition = "A standard-library Python runbook that deletes every deployment on the Foundry account. The account's resource ID is written in by Terraform at upload, so it is not in git."
+inputs = ["Webhook calls from the action group; the nightly schedule"]
+outputs = ["DELETE calls on the deployments"]
+
+[[azure.node]]
+id = "webhook"
+label = "Webhook"
+sub = "thalam-brake-budget"
+kind = "rg"
+col = 3.4
+row = 3
+type = "Microsoft.Automation/automationAccounts/webhooks"
+name = "thalam-brake-budget"
+created_by = "Terraform: azurerm_automation_webhook.brake"
+cost = "₹0"
+live = "check:brake: the action group"
+definition = "The runbook's address for the action group. It expires after a year; Terraform sets the date once and ignores it afterwards."
+inputs = ["The action group's runbook receiver"]
+outputs = ["A runbook job"]
+
+[[azure.node]]
+id = "ag"
+label = "Action group"
+sub = "{action_group}"
+kind = "rg"
+col = 5.1
+row = 3
+type = "microsoft.insights/actionGroups"
+name = "{action_group}"
+created_by = "Terraform: azurerm_monitor_action_group.brake"
+cost = "₹0"
+live = "type:microsoft.insights/actionGroups"
+definition = "What a budget's brake line notifies. Two receivers: an e-mail to the owner, verified with a one-time code within 30 minutes of saving, and the brake runbook."
+inputs = ["Brake-line alerts from both budgets"]
+outputs = ["An e-mail notice; a webhook call to the runbook"]
+
+[[azure.node]]
+id = "email"
+label = "Owner's e-mail"
+sub = "in .env"
+kind = "outside"
+col = 6.6
+row = 3
+type = "—"
+name = "—"
+created_by = "—"
+cost = "₹0"
+live = ""
+definition = "Every budget alert and the brake's notice. The address lives in .env and reaches Terraform as an environment variable only."
+inputs = ["Budget alerts, the action group's notice"]
+outputs = ["Roshan knows"]
+
+[[azure.edge]]
+from = "laptop"
+to = "deployment"
+label = "up / down"
+kind = "write"
+at = 0.42
+
+[[azure.edge]]
+from = "policy"
+to = "deployment"
+label = "model, SKU, cap"
+kind = "control"
+
+[[azure.edge]]
+from = "policy"
+to = "foundry"
+label = "kind, region"
+kind = "control"
+at = 0.45
+
+[[azure.edge]]
+from = "app"
+to = "deployment"
+label = "messages"
+kind = "data"
+at = 0.45
+
+[[azure.edge]]
+from = "foundry"
+to = "project"
+label = "has"
+kind = "data"
+
+[[azure.edge]]
+from = "foundry"
+to = "deployment"
+label = "hosts"
+kind = "data"
+
+[[azure.edge]]
+from = "deployment"
+to = "costmgmt"
+label = "token charges"
+kind = "data"
+
+[[azure.edge]]
+from = "costmgmt"
+to = "budget-model"
+label = "spend"
+kind = "data"
+
+[[azure.edge]]
+from = "costmgmt"
+to = "budget-total"
+label = "spend"
+kind = "data"
+
+[[azure.edge]]
+from = "budget-model"
+to = "ag"
+label = "brake line"
+kind = "control"
+
+[[azure.edge]]
+from = "budget-total"
+to = "ag"
+label = "brake line"
+kind = "control"
+
+[[azure.edge]]
+from = "ag"
+to = "email"
+label = "notice"
+kind = "data"
+
+[[azure.edge]]
+from = "ag"
+to = "webhook"
+label = "receiver"
+kind = "control"
+
+[[azure.edge]]
+from = "webhook"
+to = "runbook"
+label = "starts"
+kind = "control"
+
+[[azure.edge]]
+from = "schedule"
+to = "runbook"
+label = "nightly"
+kind = "control"
+
+[[azure.edge]]
+from = "role"
+to = "foundry"
+label = "assigned on"
+kind = "control"
+
+[[azure.edge]]
+from = "role"
+to = "runbook"
+label = "held by"
+kind = "control"
+
+[[azure.edge]]
+from = "runbook"
+to = "deployment"
+label = "DELETE"
+kind = "write"
+at = 0.55
+
+# ═══ DEVOPS: how a change gets from a laptop to main, and where it goes from Phase 7 ════════════
+
+[[devops.node]]
+id = "branch"
+label = "Story branch"
+sub = "type/THL-n-slug"
+kind = "local"
+col = 0
+row = 0
+file = "CLAUDE.md (Commits and branches)"
+definition = "Every change starts on a short-lived branch named after its Jira story. AI-DLC first: a spec is approved before code for anything non-trivial (ADR-0010)."
+inputs = ["An approved spec or a small fix"]
+outputs = ["Commits"]
+
+[[devops.node]]
+id = "precommit"
+label = "pre-commit hook"
+sub = "secrets scan"
+kind = "local"
+col = 0
+row = 1
+file = "scripts/dev/install-hooks.sh"
+definition = "Blocks a secret before it enters history: gitleaks with the repo's rules (real Atlassian, ServiceNow and Azure addresses, tenant and subscription IDs), plus a check for a 12-digit account ID (SPEC-001-R6)."
+inputs = ["The staged files"]
+outputs = ["A commit, or a refusal naming the rule"]
+
+[[devops.node]]
+id = "commitmsg"
+label = "commit-msg hook"
+sub = "commit convention"
+kind = "local"
+col = 0
+row = 2
+file = "scripts/dev/check_commits.py"
+definition = "Checks the commit convention before the commit exists: a type, then the story's Jira key on a story branch (SPEC-001-R5)."
+inputs = ["The commit message and the branch name"]
+outputs = ["A commit, or the reason it was refused"]
+
+[[devops.node]]
+id = "local"
+label = "make lint, make test"
+sub = "before pushing"
+kind = "local"
+col = 0
+row = 3
+file = "Makefile"
+definition = "ruff and mypy --strict, then pytest and the requirement table. The same commands CI runs, so a red CI is never a surprise."
+inputs = ["The working tree"]
+outputs = ["Green, or what to fix"]
+
+[[devops.node]]
+id = "pr"
+label = "Pull request"
+sub = "the only way to main"
+kind = "github"
+col = 1.5
+row = 1.7
+file = ".github/rulesets/main.json"
+definition = "Opened from the story branch. Its description ends with the Claude Code line; merging needs every required check green."
+inputs = ["A pushed branch"]
+outputs = ["Five required checks start"]
+
+[[devops.node]]
+id = "dependabot"
+label = "Dependabot"
+sub = "weekly, grouped"
+kind = "github"
+col = 1.5
+row = 3.4
+file = ".github/dependabot.yml"
+definition = "Opens grouped pull requests for outdated uv packages and GitHub Actions every week. Each goes through the same checks and merges only when green (SPEC-001-R7)."
+inputs = ["uv.lock, workflow files"]
+outputs = ["Pull requests"]
+
+[[devops.node]]
+id = "lint"
+label = "lint"
+sub = "ruff, mypy, commits"
+kind = "check"
+col = 3
+row = 0
+file = ".github/workflows/ci.yml"
+definition = "`make lint`, then the commit check over every commit the pull request adds (SPEC-001-R4, R5)."
+inputs = ["The pull request's head commit"]
+outputs = ["Pass or fail, required by name"]
+
+[[devops.node]]
+id = "test"
+label = "test"
+sub = "pytest, spec check"
+kind = "check"
+col = 3
+row = 0.85
+file = ".github/workflows/ci.yml"
+definition = "Every test, then the requirement table as a job summary. A requirement ID with no citing test or live proof fails a Built spec (SPEC-001-R8)."
+inputs = ["The pull request's head commit"]
+outputs = ["Pass or fail, required by name"]
+
+[[devops.node]]
+id = "secrets"
+label = "secrets"
+sub = "gitleaks, all history"
+kind = "check"
+col = 3
+row = 1.7
+file = ".github/workflows/ci.yml"
+definition = "gitleaks over the whole history, with a checksum-verified binary: the repo is public, so history must be clean (SPEC-001-R6)."
+inputs = ["Every commit ever made"]
+outputs = ["Pass or fail, required by name"]
+
+[[devops.node]]
+id = "codeql-py"
+label = "codeql (python)"
+sub = "code scanning"
+kind = "check"
+col = 3
+row = 2.55
+file = ".github/workflows/codeql.yml"
+definition = "GitHub's code scanner on the Python code; free because the repo is public (SPEC-001-R7)."
+inputs = ["The Python sources"]
+outputs = ["Alerts; pass or fail, required by name"]
+
+[[devops.node]]
+id = "codeql-act"
+label = "codeql (actions)"
+sub = "workflow scanning"
+kind = "check"
+col = 3
+row = 3.4
+file = ".github/workflows/codeql.yml"
+definition = "The same scanner on the workflow files: CI is code, and it holds a token. Every third-party action is pinned to a full commit SHA."
+inputs = ["The workflow files"]
+outputs = ["Alerts; pass or fail, required by name"]
+
+[[devops.node]]
+id = "ruleset"
+label = "Ruleset on main"
+sub = "5 checks, PR only"
+kind = "gate"
+col = 4.5
+row = 1.7
+file = ".github/rulesets/main.json"
+definition = "Changes reach main by pull request only, with lint, test, secrets and both CodeQL jobs green; linear history; no force-push; no deletion; zero required approvals (one person); nobody can bypass it."
+inputs = ["The five check results"]
+outputs = ["Merge allowed or blocked"]
+
+[[devops.node]]
+id = "merge"
+label = "Squash merge"
+sub = "to main"
+kind = "github"
+col = 6
+row = 1.7
+file = "CLAUDE.md (Commits and branches)"
+definition = "One commit per story on main, its message carrying the Jira key and the PR number. The branch is deleted."
+inputs = ["A green pull request"]
+outputs = ["A new commit on main"]
+
+[[devops.node]]
+id = "main"
+label = "main"
+sub = "CI again, weekly scan"
+kind = "github"
+col = 6
+row = 0.4
+file = ".github/workflows/ci.yml, codeql.yml"
+definition = "CI and CodeQL run again on main after each merge, and CodeQL also every Monday, so a new rule finds old code."
+inputs = ["Merges"]
+outputs = ["A known-good main"]
+
+[[devops.node]]
+id = "image"
+label = "Build once"
+sub = "linux/arm64, signed"
+kind = "planned"
+phase = 7
+col = 7.5
+row = 1.7
+file = "Phase 7 (ROADMAP.md)"
+definition = "Each image is built once for linux/arm64, signed, with an SBOM, and tagged by commit (CLAUDE.md rule 2)."
+inputs = ["A commit on main"]
+outputs = ["A signed image, known by its digest"]
+
+[[devops.node]]
+id = "staging"
+label = "Staging"
+sub = "on demand"
+kind = "planned"
+phase = 7
+col = 7.5
+row = 2.75
+file = "Phase 7 (ROADMAP.md)"
+definition = "Brought up only to test, then parked: inside the monthly ceiling nothing can run all month. Helm and Flux, as Kaval."
+inputs = ["An image digest"]
+outputs = ["A release verified in staging"]
+
+[[devops.node]]
+id = "prod"
+label = "Production"
+sub = "same digest"
+kind = "planned"
+phase = 7
+col = 7.5
+row = 3.8
+file = "Phase 7 (ROADMAP.md)"
+definition = "Gets exactly the digest staging verified; environments differ only by a values file (CLAUDE.md rule 5)."
+inputs = ["A digest that passed staging"]
+outputs = ["Running Thalam"]
+
+[[devops.edge]]
+from = "branch"
+to = "precommit"
+label = "git commit"
+kind = "data"
+
+[[devops.edge]]
+from = "precommit"
+to = "commitmsg"
+label = "then"
+kind = "control"
+
+[[devops.edge]]
+from = "commitmsg"
+to = "local"
+label = "then"
+kind = "control"
+
+[[devops.edge]]
+from = "local"
+to = "pr"
+label = "git push"
+kind = "data"
+
+[[devops.edge]]
+from = "dependabot"
+to = "pr"
+label = "opens"
+kind = "data"
+
+[[devops.edge]]
+from = "pr"
+to = "lint"
+kind = "control"
+
+[[devops.edge]]
+from = "pr"
+to = "test"
+kind = "control"
+
+[[devops.edge]]
+from = "pr"
+to = "secrets"
+kind = "control"
+
+[[devops.edge]]
+from = "pr"
+to = "codeql-py"
+kind = "control"
+
+[[devops.edge]]
+from = "pr"
+to = "codeql-act"
+kind = "control"
+
+[[devops.edge]]
+from = "lint"
+to = "ruleset"
+kind = "data"
+
+[[devops.edge]]
+from = "test"
+to = "ruleset"
+kind = "data"
+
+[[devops.edge]]
+from = "secrets"
+to = "ruleset"
+label = "all green"
+kind = "data"
+
+[[devops.edge]]
+from = "codeql-py"
+to = "ruleset"
+kind = "data"
+
+[[devops.edge]]
+from = "codeql-act"
+to = "ruleset"
+kind = "data"
+
+[[devops.edge]]
+from = "ruleset"
+to = "merge"
+label = "allowed"
+kind = "control"
+
+[[devops.edge]]
+from = "merge"
+to = "main"
+label = "runs again"
+kind = "data"
+
+[[devops.edge]]
+from = "merge"
+to = "image"
+label = "Phase 7"
+kind = "data"
+
+[[devops.edge]]
+from = "image"
+to = "staging"
+label = "by digest"
+kind = "write"
+
+[[devops.edge]]
+from = "staging"
+to = "prod"
+label = "promote"
+kind = "write"
+
+# The infrastructure path: how Azure changes, separately from code.
+[[infra.node]]
+id = "numbers"
+label = "guardrails.json"
+sub = "every number, once"
+kind = "local"
+col = 0
+row = 0
+file = "infra/modules/azure-guardrails/guardrails.json"
+definition = "Every cost number and guardrail name, once. Terraform and scripts/ops read it, and a test checks the documents quote it (SPEC-001-R18)."
+inputs = ["A change, in one commit with every document"]
+outputs = ["Values for Terraform and the scripts"]
+
+[[infra.node]]
+id = "envvars"
+label = ".env, as data"
+sub = "names, e-mail"
+kind = "local"
+col = 1.5
+row = 1
+file = "scripts/ops/tf.py"
+definition = "The subscription, the Foundry name and the alert e-mail reach Terraform as environment variables only, so none is in git or on a command line. .env is read as data, never run as shell."
+inputs = [".env, az account show"]
+outputs = ["TF_VAR_ environment variables"]
+
+[[infra.node]]
+id = "plan"
+label = "make guardrails-plan"
+sub = "changes nothing"
+kind = "local"
+col = 1.5
+row = 0
+file = "scripts/ops/tf.py"
+definition = "Terraform plans infra/envs/azure and saves the plan. Reading it is the review."
+inputs = ["The Terraform module, the numbers, the environment variables"]
+outputs = ["A saved plan"]
+
+[[infra.node]]
+id = "apply"
+label = "make guardrails-apply"
+sub = "Roshan's go"
+kind = "gate"
+col = 3
+row = 0
+file = "scripts/ops/tf.py"
+definition = "Applies only the plan that was saved, so what changes is what was reviewed. There is no destroy target."
+inputs = ["The saved plan"]
+outputs = ["Changes in Azure"]
+
+[[infra.node]]
+id = "rg"
+label = "{resource_group}"
+sub = "{region}"
+kind = "github"
+col = 4.5
+row = 0
+file = "infra/modules/azure-guardrails/*.tf"
+definition = "The resource group and everything in the Azure view, created and kept in step by Terraform (state is local)."
+inputs = ["Terraform applies"]
+outputs = ["The guardrails, in force"]
+
+[[infra.node]]
+id = "sweepcheck"
+label = "make azure-sweep"
+sub = "every session's end"
+kind = "check"
+col = 4.5
+row = 1
+file = "scripts/ops/azure_sweep.py"
+definition = "Read-only. Fails on a deployment left up, a resource type not on the list, anything tagged project=thalam outside the group, or a missing guardrail (SPEC-001-R17)."
+inputs = ["What exists in Azure"]
+outputs = ["CLEAN, or what to fix"]
+
+[[infra.edge]]
+from = "numbers"
+to = "plan"
+label = "values"
+kind = "data"
+
+[[infra.edge]]
+from = "envvars"
+to = "plan"
+label = "TF_VAR_*"
+kind = "data"
+
+[[infra.edge]]
+from = "plan"
+to = "apply"
+label = "saved plan"
+kind = "control"
+
+[[infra.edge]]
+from = "apply"
+to = "rg"
+label = "applies"
+kind = "write"
+
+[[infra.edge]]
+from = "sweepcheck"
+to = "rg"
+label = "reads"
+kind = "data"
+
+# ═══ GLOSSARY: the words this project uses, defined once ═══════════════════════════════════════
+
+[[glossary]]
+term = "Proposal"
+group = "Thalam"
+definition = "A row in which the agent says what it wants done, why, and with what evidence. The agent's only write; nothing changes until policy and, where asked, a person allow it."
+where = "Architecture, Flows"
+
+[[glossary]]
+term = "Executor"
+group = "Thalam"
+definition = "The only component that writes to outside systems, with scoped bot accounts, and only for approved proposals."
+where = "Architecture"
+
+[[glossary]]
+term = "auto / ask / never"
+group = "Thalam"
+definition = "The three classes OPA gives an action: done without asking, done after a person approves, or refused. Every action starts as ask."
+where = "Flows: Create the Jira release"
+
+[[glossary]]
+term = "interrupt()"
+group = "Thalam"
+definition = "LangGraph's pause: the graph saves its checkpoint and waits. It never acts; it resumes on the executor's recorded outcome."
+where = "Flows: Create the Jira release"
+
+[[glossary]]
+term = "Checkpoint"
+group = "Thalam"
+definition = "LangGraph's saved state of a graph, kept in Postgres, so a paused workflow survives a restart."
+where = "Architecture: Release graph"
+
+[[glossary]]
+term = "Release graph"
+group = "Thalam"
+definition = "Thalam's database of components, their dependencies, releases and calendar windows. Dependency questions are answered from it with no model."
+where = "Architecture"
+
+[[glossary]]
+term = "Guard layers"
+group = "Thalam"
+definition = "The eight checks around every request and answer, each stopping a different failure and failing closed (ADR-0005)."
+where = "Architecture, Flows: Ask a question"
+
+[[glossary]]
+term = "Spotlighting"
+group = "Thalam"
+definition = "Wrapping outside text (Jira descriptions, commit messages, chat input) as labelled data, so the model reads it but never obeys it (guard layer 4)."
+where = "Flows: Ask a question"
+
+[[glossary]]
+term = "Grounding check"
+group = "Thalam"
+definition = "Every release-note line and every claim in an answer must cite a Jira key, a PR or a passage. An uncited line fails."
+where = "Flows: Ask a question"
+
+[[glossary]]
+term = "Model router"
+group = "Thalam"
+definition = "The code that picks a model per call (Ollama locally, Claude hosted) and holds the monthly cap in code (ADR-0006)."
+where = "Architecture"
+
+[[glossary]]
+term = "Readiness gate"
+group = "Release management"
+definition = "The checks a release must pass before it goes out: CI, scope, scans, signed image, upstream dependencies, change approval and window, freezes, rollback plan."
+where = "Flows: The readiness gate"
+
+[[glossary]]
+term = "fixVersion"
+group = "Release management"
+definition = "Jira's name for a release: the version an issue is fixed in. Thalam creates it and releases it, through the executor."
+where = "Architecture"
+
+[[glossary]]
+term = "Change request"
+group = "Release management"
+definition = "ServiceNow's record that a change is planned, approved and inside a window; closed after the release, successful or with issues."
+where = "Architecture"
+
+[[glossary]]
+term = "CAB"
+group = "Release management"
+definition = "Change Advisory Board: the people who approve changes. Thalam drafts its weekly summary."
+where = "Architecture: Release notes"
+
+[[glossary]]
+term = "Freeze window"
+group = "Release management"
+definition = "A period when nothing may be released, such as a peak sales week. Releasing into one is classed never."
+where = "Flows: The readiness gate"
+
+[[glossary]]
+term = "Golden signals"
+group = "Release management"
+definition = "Latency, traffic, errors and saturation: the four measures the post-release watch compares with the baseline."
+where = "Flows: Watch a release"
+
+[[glossary]]
+term = "DORA metrics"
+group = "Release management"
+definition = "Deployment frequency, lead time for changes, change failure rate and time to restore, per team."
+where = "Flows: Watch a release"
+
+[[glossary]]
+term = "Global Standard deployment"
+group = "Azure"
+definition = "A Foundry model deployment billed per token and served from Microsoft's global capacity. Nothing bills while it is idle, so deleting it loses nothing."
+where = "Azure"
+
+[[glossary]]
+term = "Capacity"
+group = "Azure"
+definition = "A deployment's rate limit in units: one unit is one request and a thousand tokens a minute. Thalam runs at {capacity}, with Azure Policy capping it at {cap}."
+where = "Azure, Cost"
+
+[[glossary]]
+term = "Budget"
+group = "Azure"
+definition = "A monthly amount with alert lines. It only alerts, and late (cost data lags up to {lag_days} days); Azure pay-as-you-go has no hard spending limit."
+where = "Azure, Cost"
+
+[[glossary]]
+term = "Brake line"
+group = "Azure"
+definition = "The alert line that starts the brake: {total_brake_pct}% of the total budget ({total_brake}) or {model_brake_pct}% of the model budget ({model_brake})."
+where = "Cost, Flows: The cost brake"
+
+[[glossary]]
+term = "Action group"
+group = "Azure"
+definition = "Azure Monitor's list of who to tell and what to start when an alert fires. Thalam's e-mails the owner and starts the brake runbook."
+where = "Azure"
+
+[[glossary]]
+term = "Runbook"
+group = "Azure"
+definition = "A script Azure Automation runs on demand or on a schedule. Thalam's brake is one, in Python with the standard library only."
+where = "Azure"
+
+[[glossary]]
+term = "Managed identity"
+group = "Azure"
+definition = "An identity Azure gives a resource so it can call other Azure services without a stored secret. The brake's holds one custom role."
+where = "Azure"
+
+[[glossary]]
+term = "Azure Policy"
+group = "Azure"
+definition = "Rules Azure enforces on every create and update. Thalam's refuses anything but the approved model, type, capacity and region."
+where = "Azure"
+
+[[glossary]]
+term = "Park / unpark"
+group = "Azure"
+definition = "Deleting the deployment when it is not in use (`make foundry-down`) and creating it again (`make foundry-up`, only when every guardrail holds)."
+where = "Flows: Park and unpark"
+
+[[glossary]]
+term = "Sweep"
+group = "Azure"
+definition = "`make azure-sweep`: a read-only check at the end of every session that nothing billable was left behind."
+where = "DevOps, Flows: Park and unpark"
+
+[[glossary]]
+term = "Foundry IQ"
+group = "Azure"
+definition = "Microsoft's knowledge layer for agents (formerly Azure AI Search), used only on its Free or Serverless tier."
+where = "Architecture"
+
+[[glossary]]
+term = "Claude Consumption Units"
+group = "Azure"
+definition = "How Claude on Foundry is billed: through Azure Marketplace, at Anthropic's prices, on the Azure bill in rupees."
+where = "Azure: Cost Management"
+
+[[glossary]]
+term = "Ruleset"
+group = "DevOps"
+definition = "GitHub's rules for a branch. main takes pull requests only, with five checks green, linear history and no force-push."
+where = "DevOps"
+
+[[glossary]]
+term = "Required check"
+group = "DevOps"
+definition = "A CI job a pull request must pass to merge, matched by its exact name: lint, test, secrets, codeql (python), codeql (actions)."
+where = "DevOps"
+
+[[glossary]]
+term = "Squash merge"
+group = "DevOps"
+definition = "A pull request's commits become one commit on main, so each story is one line of history."
+where = "DevOps"
+
+[[glossary]]
+term = "gitleaks"
+group = "DevOps"
+definition = "A secret scanner, run before each commit and in CI over the whole history, with rules for this project's real addresses and IDs."
+where = "DevOps"
+
+[[glossary]]
+term = "CodeQL"
+group = "DevOps"
+definition = "GitHub's code-scanning engine, run on the Python code and on the workflow files."
+where = "DevOps"
+
+[[glossary]]
+term = "SBOM"
+group = "DevOps"
+definition = "Software bill of materials: the list of everything inside an image, published with it from Phase 7."
+where = "DevOps"
+
+[[glossary]]
+term = "Promotion by digest"
+group = "DevOps"
+definition = "Production gets the exact image staging tested, named by its content hash, never rebuilt (CLAUDE.md rule 5)."
+where = "DevOps"
+
+[[glossary]]
+term = "AI-DLC"
+group = "Ways of working"
+definition = "The AI-driven development life cycle Thalam follows: Inception (questions, then an approved spec), Construction (plan, tests, code), Operations (lessons back into specs) (ADR-0010)."
+where = "Requirements"
+
+[[glossary]]
+term = "Requirement ID"
+group = "Ways of working"
+definition = "A spec's numbered requirement, such as SPEC-001-R13. Each is proved by a test that cites it (`# covers:`) or by a live proof in a lab."
+where = "Requirements"
+
+[[glossary]]
+term = "Lab"
+group = "Ways of working"
+definition = "A step-by-step document a stranger could follow to reproduce what was built, with its evidence recorded. Lab 00 holds Phase 0's live proofs."
+where = "Requirements"
+
+[[glossary]]
+term = "ADR"
+group = "Ways of working"
+definition = "Architecture decision record: one decision, why, and what was rejected. A later ADR amends an earlier one with a dated note."
+where = "Decisions"
