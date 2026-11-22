@@ -38,12 +38,13 @@ an AI platform role. Two consequences that override normal defaults:
 
 ## Non-negotiable constraints
 
-### 1. Cost: plan for $50, alarms at $70 / $85, brake at $95
+### 1. Cost: ₹1,500 a month at most; plan under ₹750, alarms ₹1,050 / ₹1,275, brake ₹1,425
 
-Set by [ADR-0008](docs/adr/0008-cost-ceiling.md). Covers Azure, model tokens and any SaaS tier;
-the hosted model has its own $20 cap enforced by the router. Going above $100 needs a new ADR.
-Azure pay-as-you-go has **no hard spending limit**: its budgets ($100 at 70 / 85 / 95 %, $20 on the
-model) only alert. The router's in-code cap is the brake, and a budget always exists before the
+Set by [ADR-0013](docs/adr/0013-cost-ceiling-1500-inr.md), in the billing currency (INR), with the
+shape of [ADR-0008](docs/adr/0008-cost-ceiling.md). It covers Azure, model tokens and any SaaS
+tier. The hosted model has its own ₹1,000 budget, and the router's cap is $10. Going above ₹1,500
+needs a new ADR, written before the spend. Azure pay-as-you-go has **no hard spending limit**: its
+budgets (₹1,500 at 70 / 85 / 95 %, ₹1,000 on the model) only alert. The router's in-code cap is the brake, and a budget always exists before the
 resource it guards ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)).
 
 Before proposing *any* paid resource, state its monthly cost and verify the price on the day.

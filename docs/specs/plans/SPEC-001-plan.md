@@ -2123,7 +2123,7 @@ Phase 7.
 open, was already replaced on 2026-11-18 by Roshan's call; nothing to do there.)
 
 Replace this block of Phase 0 lines (keep the lines above it unchanged). It is the block as
-THL-22 left it on 2026-11-22:
+THL-22 and THL-23 left it on 2026-11-22:
 
 ```
 - [ ] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2)
@@ -2132,8 +2132,8 @@ THL-22 left it on 2026-11-22:
       workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group
 - [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
 - [ ] Jira project + epics mirroring this roadmap
-- [ ] Azure budgets **before** the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the
-      model (ADR-0012; Azure has no hard cap, so the router's cap is the brake from Phase 2)
+- [ ] Azure budgets **before** the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on
+      the model (ADR-0013; Azure has no hard cap, so the router's cap is the brake from Phase 2)
 ```
 
 with:
@@ -2147,7 +2147,7 @@ with:
 - [x] Jira: `THL` planning project + epics on the existing site; a separate sandbox site with a
       read-only scoped token; ServiceNow PDI with an `snc_read_only` user; Slack app in `#thalam`;
       Claude on Microsoft Foundry in Thalam's own resource group ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
-- [x] Azure budgets before the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the model
+- [x] Azure budgets before the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on the model
 - [ ] SPEC-002 (Phase 1) drafted and approved before any Phase 1 code
 ```
 
@@ -2236,8 +2236,8 @@ Roshan moved Thalam to Microsoft Foundry and Azure before Task 10's sign-ups, wh
 key did not exist yet ([ADR-0012](../../adr/0012-microsoft-foundry-and-azure.md)). Changed:
 
 - **SPEC-001-R13** (amended, still Approved): the Claude deployment on Foundry answers a token-count
-  call with the key in `.env`, and Azure budgets of $100 (alerts 70 / 85 / 95 %) and $20 on the
-  model exist before it.
+  call with the key in `.env`, and Azure budgets exist before it. They were $100 (alerts 70 / 85 / 95 %)
+  and $20 on the model; THL-23 set them in rupees the same day: ₹1,500 and ₹1,000 (ADR-0013).
 - **`check_foundry`** replaces `check_anthropic`.
   - It builds `https://<resource>.services.ai.azure.com/anthropic/v1/messages/count_tokens` from
     `ANTHROPIC_FOUNDRY_RESOURCE`, a name, never a URL from config.

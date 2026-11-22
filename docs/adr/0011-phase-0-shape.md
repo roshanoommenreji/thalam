@@ -27,7 +27,7 @@ Writing SPEC-001 turned up three facts that changed Phase 0:
    meter is the Anthropic key, capped at $20 or less a month in its console
    ([ADR-0008](0008-cost-ceiling.md)).
    *Superseded 2026-11-22 by [ADR-0012](0012-microsoft-foundry-and-azure.md): the cloud is Azure,
-   the model is Claude on Microsoft Foundry, and Azure budgets ($100 and $20) start in Phase 0,
+   the model is Claude on Microsoft Foundry, and Azure budgets (₹1,500 and ₹1,000, [ADR-0013](0013-cost-ceiling-1500-inr.md)) start in Phase 0,
    before the model deployment. The hosting brake still arrives with hosting in Phase 7.*
 4. **The local folder stays `Release Agent`**; the repository is `thalam`. This replaces
    [ADR-0009](0009-name-and-jira-key.md)'s note that the folder would be renamed at `git init`.

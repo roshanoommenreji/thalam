@@ -26,6 +26,9 @@ at a cap of **$20 / month**, enforced in code by the router.
 *Superseded in part 2026-11-22 by [ADR-0012](0012-microsoft-foundry-and-azure.md): read "Azure"
 for "AWS" here and below. Azure budgets carry the alarms from Phase 0, and Kaval's list is kept in
 Azure terms in CLAUDE.md rule 1.*
+*Amounts superseded 2026-11-22 by [ADR-0013](0013-cost-ceiling-1500-inr.md): the ceiling is ₹1,500 a month in the billing
+currency (plan under ₹750, alarms ₹1,050 / ₹1,275, brake ₹1,425) and the model ₹1,000, with the
+router's cap at $10. The shape of this table stands.*
 
 Carried over from Kaval unchanged: no NAT gateway, no ALB, no persistent EKS, no RDS, no GPU;
 staging on demand; production parks itself when idle; every resource priced on the day it is
