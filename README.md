@@ -46,8 +46,11 @@ Sibling of [Kaval](https://github.com/roshanoommenreji/kaval), and built the sam
 | `web` | The chat app | No |
 | Postgres + pgvector | Releases, graph, checks, proposals, decisions, outcomes, LangGraph checkpoints, notes index | Append-only |
 | Langfuse | LLM traces, prompt versions, eval scores | No |
+| Microsoft Foundry | Claude (hosted model, behind the router); Foundry IQ knowledge base for policies and runbooks (Phase 2) | No |
 
-Stack and conventions: [ADR-0002](docs/adr/0002-inherit-kavals-stack-and-conventions.md).
+Stack and conventions: [ADR-0002](docs/adr/0002-inherit-kavals-stack-and-conventions.md); the cloud
+is Azure and the hosted model is Claude on Microsoft Foundry
+([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)).
 Architecture: [overview](docs/architecture/overview.md). What already exists:
 [prior art](docs/prior-art.md).
 
@@ -56,7 +59,7 @@ Architecture: [overview](docs/architecture/overview.md). What already exists:
 | | |
 |---|---|
 | **Phase** | 0 — Foundations, started 2026-11-18 |
-| **Decided** | Name Thalam, key `THL`; budget plan $50, brake $95; local + hosted model router; web chat + Slack; Jira Cloud and ServiceNow PDI sandboxes |
+| **Decided** | Name Thalam, key `THL`; budget plan $50, brake $95; local + hosted model router, hosted on Claude in Microsoft Foundry; Azure, not AWS (ADR-0012); web chat + Slack; Jira Cloud and ServiceNow PDI sandboxes |
 | **Running cost** | $0 — nothing provisioned |
 
 ## Repository map

@@ -12,6 +12,8 @@ Updated whenever a component is added, removed or rewired (Definition of Done, i
  Prom ──┤   (events)     + pgvector     │   graphs: chat, readiness, notes,
  Kaval ─┘                               │           post_release_watch, cab_summary
                                         │   guard: in → screen → model → out
+                                        │   model: router → Ollama (local) or Claude on
+                                        │          Microsoft Foundry; knowledge: Foundry IQ
                                         ▼
                                     proposals ─▶ policy (OPA) ─▶ auto / ask / never
                                                                     │
@@ -23,6 +25,11 @@ Updated whenever a component is added, removed or rewired (Definition of Done, i
                                                 ▼
                                     executions, outcomes ─▶ graph resumes (checkpoint)
 ```
+
+Hosted pieces ([ADR-0012](../adr/0012-microsoft-foundry-and-azure.md)): Claude on Microsoft
+Foundry, reached only through the router; Foundry IQ (Free or Serverless tier) serves release
+policies, runbooks, CAB rules and freeze calendars from Phase 2. Postgres stays the system of
+record for the release graph. Phase 7 hosts the services on Azure.
 
 ## Core entities
 

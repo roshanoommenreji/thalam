@@ -22,7 +22,9 @@ The agent keeps one central picture of every release in flight and:
 It is the sibling of **Kaval** (`..\AWS AI`), an ops agent with human-in-the-loop approval. The
 stack, the safety architecture, the environments and the documentation discipline are **copied
 from Kaval on purpose**. Where this project departs from Kaval, an ADR says why
-([ADR-0002](docs/adr/0002-inherit-kavals-stack-and-conventions.md)). Integration with Kaval is
+([ADR-0002](docs/adr/0002-inherit-kavals-stack-and-conventions.md)). The largest departure is the
+cloud. Kaval runs on AWS; Thalam runs on **Microsoft Azure**, and its hosted model is **Claude on
+Microsoft Foundry** ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)). Integration with Kaval is
 planned ([future scope, FS-1](docs/future-scope.md#fs-1--kaval-integration)).
 
 This is a **learning project built to be documented**. Roshan is a Release Manager moving toward
@@ -38,14 +40,29 @@ an AI platform role. Two consequences that override normal defaults:
 
 ### 1. Cost: plan for $50, alarms at $70 / $85, brake at $95
 
-Set by [ADR-0008](docs/adr/0008-cost-ceiling.md). Covers AWS, model tokens and any SaaS tier;
+Set by [ADR-0008](docs/adr/0008-cost-ceiling.md). Covers Azure, model tokens and any SaaS tier;
 the hosted model has its own $20 cap enforced by the router. Going above $100 needs a new ADR.
-Before proposing *any* paid resource, state its monthly cost and verify the price on the day. Kaval's "never without a conversation" list applies unchanged:
-NAT Gateway, ALB, persistent EKS, RDS, GPU instances, always-on staging.
+Azure pay-as-you-go has **no hard spending limit**: its budgets ($100 at 70 / 85 / 95 %, $20 on the
+model) only alert. The router's in-code cap is the brake, and a budget always exists before the
+resource it guards ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)).
+
+Before proposing *any* paid resource, state its monthly cost and verify the price on the day.
+Kaval's "never without a conversation" list, in Azure terms:
+- NAT Gateway;
+- Application Gateway or Front Door;
+- always-on AKS node pools;
+- managed databases;
+- GPU VMs;
+- always-on staging;
+- Foundry IQ (AI Search) Basic or above, about $74 a month;
+- provisioned-throughput or managed-compute model deployments.
 
 ### 2. Images must be `linux/arm64`
 
-Same Graviton target as Kaval. Always `docker buildx build --platform linux/arm64`.
+Same Arm target as Kaval. On Azure that means Cobalt Arm VMs or an AKS Arm node pool
+([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)). Always
+`docker buildx build --platform linux/arm64`. Azure Container Apps runs `linux/amd64` only, so
+choosing it in Phase 7 would need an ADR that revisits this rule.
 
 ### 3. The agent never gets write access
 
@@ -77,8 +94,8 @@ differ only by a Helm values file and a pinned digest (Kaval ADR-0004, 0032, 008
 
 ### 6. Secrets never enter git
 
-Plan for the repo being public. No real instance URLs, tenant IDs, account IDs or tokens in any
-committed file. `.env.example` carries placeholders only. gitleaks runs pre-commit.
+Plan for the repo being public. No real instance URLs, tenant IDs, account IDs, Azure subscription
+IDs, Azure resource names (a resource's name is its address) or tokens in any committed file. `.env.example` carries placeholders only. gitleaks runs pre-commit.
 
 ---
 
@@ -98,8 +115,14 @@ adapters; Postgres checkpointer, never the in-memory one outside tests
 **Policy** — OPA/Rego in `policy/`, every action classed `auto` / `ask` / `never`; everything
 starts `ask` (Kaval ADR-0017).
 
-**Terraform / Helm / GitOps / CI supply chain** — exactly as Kaval: modules in `infra/modules/`,
-one umbrella chart, Flux, signed images, SBOM, promotion by digest.
+**Terraform / Helm / GitOps / CI supply chain** — as Kaval, on Azure: Terraform with the
+`azurerm` provider in Kaval's layout (modules in `infra/modules/`), one umbrella chart, Flux, signed
+images, SBOM, promotion by digest.
+
+**Hosted model** — Claude on Microsoft Foundry through the Anthropic SDK's Foundry client, behind
+the router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md),
+[ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)). Knowledge for policies and runbooks
+comes from Foundry IQ on the Free or Serverless tier (Phase 2).
 
 **Commits and branches** — conventional commits with the Jira key; short-lived
 `type/THL-<n>-slug` branches; PR-only merges once CI is green.

@@ -2025,6 +2025,10 @@ Story key: `THL-20`.
 - Modify: `docs/labs/00-foundations.md` (sections 5 and 8 evidence, and the expiry table; sections 1 and 3 were filled in Tasks 0 and 7)
 
 - [ ] **Step 1:** Roshan follows lab sections 2–5 and fills in `.env` (copied from `.env.example`). Section 1 was Task 0.
+  *Amended 2026-11-22 (THL-22, [ADR-0012](../../adr/0012-microsoft-foundry-and-azure.md)):* section 5 is now
+  Microsoft Foundry, not an Anthropic console key. It runs resource group, then budget `thalam-total`, then
+  the Foundry resource and project, then budget `thalam-model`, then the Claude Haiku deployment. Budgets come
+  before anything that can spend. Its evidence includes a cost check the day after the first run.
 - [ ] **Step 2: Run the check**
 
 Run: `make sandboxes`
@@ -2035,6 +2039,9 @@ Expected: seven `PASS` lines and exit 0. What a failure usually means:
   Roles tab does list it, the role is not blocking REST writes on this release: stop and record
   it. (Not confirmed beforehand whether the refusal is a 403; either way the check fails closed.)
 - R12 `channels: general, thalam`: remove the app from `#general`.
+- R13 `must be the resource name only`: `.env` holds an address; keep the name only.
+- R13 `HTTP 401`/`403`: a wrong key. `HTTP 404`: a wrong resource or deployment name.
+- The Marketplace offer refused while deploying: the billing country. Stop; ADR-0012's fallback needs an R13 amendment.
 
 - [ ] **Step 3: Fill in Lab 00's evidence** for sections 5 and 8 (paste the check output), plus the expiry table. Do it on branch `docs/THL-20-lab-00-sandbox-evidence`, commit `docs: THL-20 Lab 00 evidence for the sandboxes`, through a PR as in Task 9 step 7 (explicit title, `--author-email`).
 
@@ -2045,16 +2052,18 @@ Expected: seven `PASS` lines and exit 0. What a failure usually means:
 Story key: `THL-21`.
 
 **Files:**
-- Modify: `ROADMAP.md`, `README.md`, `docs/journal/<date>.md`, `docs/specs/SPEC-001-phase-0-foundations.md`, and `docs/adr/0011-phase-0-shape.md` only if it no longer matches what was built
+- Modify: `ROADMAP.md`, `README.md`, `docs/journal/<date>.md`, `docs/specs/SPEC-001-phase-0-foundations.md`. ADRs are not rewritten: a changed fact gets an inline note or a superseding ADR (ADR-0001), as ADR-0012 did for ADR-0011 decision 3
 - Outside the repo: `vault/projects/thalam.md`, `vault/daily/<date>.md` (use the `obsidian` skill)
 
 - [ ] **Step 1: Branch**
 
 Run: `git switch -c docs/THL-21-phase-0-close`
 
-- [ ] **Step 2: Check ADR-0011 against what was built.** It was written in Task 9 step 1, before
-  the push (*amended 2026-11-18*; the draft text that stood here is now the file itself). Amend it
-  only if Tasks 9–10 changed a fact in it.
+- [ ] **Step 2: Check ADR-0011 and ADR-0012 against what was built.** ADR-0011 was written in Task 9
+  step 1, before the push (*amended 2026-11-18*; the draft text that stood here is now the file
+  itself). ADR-0012 was written for THL-22 on 2026-11-22. If Task 10 changed a fact, add an inline
+  note or write a superseding ADR; do not rewrite them. Examples: the Marketplace offer was refused,
+  count_tokens turned out to be billed, or the model budget could not see Claude charges.
 
 <!-- First draft of ADR-0011, kept only as the plan's record; the file in docs/adr/ is authoritative.
 
@@ -2113,16 +2122,18 @@ Phase 7.
 (The planning-board line near the top, which linked a claude.ai artifact public readers cannot
 open, was already replaced on 2026-11-18 by Roshan's call; nothing to do there.)
 
-Replace this block of Phase 0 lines (keep the lines above it unchanged):
+Replace this block of Phase 0 lines (keep the lines above it unchanged). It is the block as
+THL-22 left it on 2026-11-22:
 
 ```
 - [ ] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2)
 - [ ] SPEC-001 for Phase 0 and SPEC-002 for Phase 1 drafted and approved before building
 - [ ] Sign up: Jira Cloud free site (project `THL`), ServiceNow developer program + PDI, Slack
-      workspace app, Anthropic API key with a spend limit set in its console
+      workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group
 - [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
 - [ ] Jira project + epics mirroring this roadmap
-- [ ] AWS budget alarms and the hard stop, **before** any compute (Kaval Lab 01)
+- [ ] Azure budgets **before** the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the
+      model (ADR-0012; Azure has no hard cap, so the router's cap is the brake from Phase 2)
 ```
 
 with:
@@ -2135,32 +2146,15 @@ with:
       ([ADR-0011](docs/adr/0011-phase-0-shape.md))
 - [x] Jira: `THL` planning project + epics on the existing site; a separate sandbox site with a
       read-only scoped token; ServiceNow PDI with an `snc_read_only` user; Slack app in `#thalam`;
-      Anthropic key with a console spend limit of $20 or less
-- [-] AWS budget alarms and the hard stop: moved to the start of Phase 7 (ADR-0011)
+      Claude on Microsoft Foundry in Thalam's own resource group ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
+- [x] Azure budgets before the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the model
 - [ ] SPEC-002 (Phase 1) drafted and approved before any Phase 1 code
 ```
 
 Then change `## Phase 0 — Foundations · \`[~]\`` to `## Phase 0 — Foundations · \`[x]\``.
 
-In Phase 7, replace:
-
-```
-Kaval's path, reused: k3d → k3s on Graviton, Helm, Flux, staging on demand, signed images,
-promotion by digest, restore drills.
-```
-
-with:
-
-```
-- [ ] **First, before any AWS resource:** choose the account (Kaval's or a new one), then budget
-      alarms at $70 / $85 and the hard stop at $95 (ADR-0008, ADR-0011, Kaval Lab 01)
-
-Kaval's path, reused: k3d → k3s on Graviton, Helm, Flux, staging on demand, signed images,
-promotion by digest, restore drills.
-```
-
-In Phase 8, replace `access review,\nrepo public.` with `access review (the repo has been public
-since Phase 0, ADR-0011).`
+Phases 7 and 8 need nothing. THL-22 already made Phase 7 "Kubernetes and Azure", with the budget
+extension and the brake as its first step, and made Phase 8 the final access review.
 
 - [ ] **Step 4: Update `README.md`'s status table**
 
@@ -2205,7 +2199,7 @@ git switch main && git pull --ff-only
 Expected: all required checks pass. The `test` job's summary shows the coverage table, and Built
 is now enforced.
 
-- [ ] **Step 8: Vault** (invoke the `obsidian` skill). Update `vault/projects/thalam.md` (status: Phase 0 done, the repo URL, next SPEC-002, bump `updated:`), append to `vault/daily/<today>.md`, and add ADR-0011's three calls to `vault/decisions/README.md`. Move story `THL-21`, then the Phase 0 epic `THL-1`, to Done in Jira.
+- [ ] **Step 8: Vault** (invoke the `obsidian` skill). Update `vault/projects/thalam.md` (status: Phase 0 done, the repo URL, next SPEC-002, bump `updated:`), append to `vault/daily/<today>.md`, and make sure ADR-0011's and ADR-0012's calls are in `vault/decisions/README.md`. Move story `THL-21`, then the Phase 0 epic `THL-1`, to Done in Jira.
 
 ---
 
@@ -2235,3 +2229,24 @@ The code blocks above are the first drafts. Per-task spec and quality reviews ch
 - gitleaks' Atlassian rule catches a site name with or without `.net` and with an escaped dot.
   The review found the planning site's name in Task 1 step 7's `grep` command, in that form; the
   history was rewritten before the first push.
+
+## As built (2026-11-22, the platform switch, THL-22)
+
+Roshan moved Thalam to Microsoft Foundry and Azure before Task 10's sign-ups, while R13's Anthropic
+key did not exist yet ([ADR-0012](../../adr/0012-microsoft-foundry-and-azure.md)). Changed:
+
+- **SPEC-001-R13** (amended, still Approved): the Claude deployment on Foundry answers a token-count
+  call with the key in `.env`, and Azure budgets of $100 (alerts 70 / 85 / 95 %) and $20 on the
+  model exist before it.
+- **`check_foundry`** replaces `check_anthropic`.
+  - It builds `https://<resource>.services.ai.azure.com/anthropic/v1/messages/count_tokens` from
+    `ANTHROPIC_FOUNDRY_RESOURCE`, a name, never a URL from config.
+  - It sends `ANTHROPIC_FOUNDRY_API_KEY` and counts the tokens of "ping" on `LLM_HOSTED_MODEL`.
+  - Still seven lines. Sandbox tests: 25 → 40; all tests: 131 → 146.
+  - Foundry has no models-list endpoint, so token counting is the cheapest proof.
+- **gitleaks** gained three rules: real Azure resource addresses, tenant or subscription GUIDs in
+  context, and onmicrosoft.com domains.
+- **Lab 00 §5** is Foundry, budgets first.
+- **Docs:** CLAUDE.md rules 1 and 2, ROADMAP Phases 0, 2, 7 and 8, the new `docs/cost/README.md`,
+  and FS-5 (Work IQ and Teams).
+- **Jira:** THL-8 was renamed "Kubernetes and Azure", and THL-20 and THL-21 were rewritten.
