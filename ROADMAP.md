@@ -30,8 +30,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
       [spec template](docs/specs/TEMPLATE.md)); from Kaval KAV-120 (2026-11-18)
 - [x] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2;
       `scripts/dev/spec_coverage.py`, THL-14, 2026-11-18)
-- [ ] SPEC-001 for Phase 0 and SPEC-002 for Phase 1 drafted and approved before building
-      (SPEC-001 approved 2026-11-18; SPEC-002 not drafted yet)
+- [x] SPEC-001 for Phase 0 and SPEC-002 for Phase 1 drafted and approved before building
+      (SPEC-001 approved 2026-11-18;
+      [SPEC-002](docs/specs/SPEC-002-phase-1-release-graph.md) approved 2026-11-23, THL-27)
 - [x] Sign up: Jira Cloud free site (project `THL`), ServiceNow developer program + PDI, Slack
       workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group (THL-20,
       THL-24; proofs in [Lab 00](docs/labs/00-foundations.md), 2026-11-22)

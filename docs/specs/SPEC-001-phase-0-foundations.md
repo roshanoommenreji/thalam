@@ -9,6 +9,7 @@
 - **Amended for the rupee ceiling:** 2026-11-22, approved by Roshan. The account bills in INR and the most he can spend is ₹1,500 a month, so the budgets are ₹1,500 and ₹1,000 ([ADR-0013](../adr/0013-cost-ceiling-1500-inr.md)); R13, open question 3 and Numbers change
 - **Amended during the sandbox sign-ups:** 2026-11-22, approved by Roshan. R12's channel is `#thalam-releases`: Slack refuses a channel named like a user, the bot user is named `thalam`, and Slack does not rename a bot user that already exists. The rule is unchanged: one channel only
 - **Amended for the cost guardrails:** 2026-11-22, approved by Roshan. Six guardrails are built and proven before the Claude deployment ([ADR-0014](../adr/0014-azure-cost-guardrails.md)): R14–R20 are added; Out of scope, Numbers, open question 3, Failure and safety, Done when and the folders R8 scans (`infra/` added) change
+- **Amended for SPEC-002's Inception:** 2026-11-23, approved by Roshan. R8 no longer fails a Draft or Approved spec whose proof files are not written yet: Inception writes the spec before the code ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)), and SPEC-002 failed the check on 17 such paths. The table lists them, their shape is still checked, and from Built a missing file fails as before
 
 > One page. `CLAUDE.md` wins over anything written here. Drafted through `superpowers:brainstorming`
 > on 2026-11-18 ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)).
@@ -64,7 +65,7 @@ file (CLAUDE.md rule 6).
 | SPEC-001-R5 | Commit messages are conventional; on a story branch (`type/THL-<n>-slug`) the subject carries that THL key, and a message without it fails | `scripts/dev/test_check_commits.py` |
 | SPEC-001-R6 | gitleaks blocks secrets in pre-commit and in CI over the full history; a planted fake key is caught | `.github/workflows/ci.yml`, live: `docs/labs/00-foundations.md` |
 | SPEC-001-R7 | CodeQL (Python, Actions) runs on PRs and `main`; Dependabot watches `uv` and Actions | `.github/workflows/codeql.yml`, `.github/dependabot.yml` |
-| SPEC-001-R8 | The requirement check fails on a duplicate ID, a cited ID that is unknown or belongs to a Retired spec, a missing "Proved by" path, or an unparseable spec; for a Built or Amended spec, also on a requirement that no file cites and no existing `live:` lab mentions, and on a `live:` lab that still says `_not run yet_`. Draft and Approved specs are exempt from those two rules | `scripts/dev/test_spec_coverage.py` |
+| SPEC-001-R8 | The requirement check fails on a duplicate ID, a cited ID that is unknown or belongs to a Retired spec, a badly shaped "Proved by" path, or an unparseable spec; for a Built or Amended spec, also on a "Proved by" file that does not exist, a requirement that no file cites and no existing `live:` lab mentions, and a `live:` lab that still says `_not run yet_`. Draft and Approved specs are exempt from those three rules, and the table lists the files they name but have not written yet | `scripts/dev/test_spec_coverage.py` |
 | SPEC-001-R9 | A `THL` planning project exists on the existing Jira site with one epic per roadmap phase, and no bot account on that site | live: `docs/labs/00-foundations.md` |
 | SPEC-001-R10 | The sandbox Jira site's read token (scoped to read, or an OAuth app with read scopes if scoped tokens are unavailable) can read the site, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R11 | The ServiceNow read user (`snc_read_only`) can read `change_request`, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
@@ -86,6 +87,8 @@ job summary. Its test runs it on the real repo and on small broken trees it buil
 directory. It also fails closed on a malformed row, an empty specs folder, a live proof outside
 docs/labs/, and a proof path outside the repo or naming a test the file does not contain. A lab
 marks evidence it has not recorded yet with `_not run yet_`; a Built spec cannot name such a lab.
+A Draft or Approved spec may name proof files that are not written yet; the table lists them, and
+from Built they must exist.
 
 **`check_sandboxes.py` (R10–R13).** Reads `.env`, prints pass or fail per line, never prints a token
 or a site URL, keeps going when one sandbox is down. Run by hand in Phase 0; Phase 2 reuses it as a

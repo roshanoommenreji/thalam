@@ -175,13 +175,54 @@ def test_citing_a_retired_spec_fails(tmp_path: Path) -> None:
     assert any("is Retired" in p for p in _problems(root))
 
 
-def test_a_missing_proof_path_fails(tmp_path: Path) -> None:
+@pytest.mark.parametrize("status", ["Built", "Amended"])
+def test_a_built_spec_whose_proof_file_is_missing_fails(tmp_path: Path, status: str) -> None:
     root = _tree(tmp_path, {
         "docs/specs/SPEC-900-x.md": _spec(
-            "900", "Draft", [("SPEC-900-R1", "`services/a/missing.py`")]
+            "900", status, [("SPEC-900-R1", "`services/a/missing.py`")]
         ),
     })
     assert any("services/a/missing.py does not exist" in p for p in _problems(root))
+
+
+@pytest.mark.parametrize("status", ["Draft", "Approved"])
+@pytest.mark.parametrize(
+    "proof",
+    ["`services/a/missing.py`", "`services/a/missing.py::test_x`", "live: `docs/labs/01-x.md`"],
+)
+def test_a_spec_not_yet_built_may_name_proof_files_not_written_yet(
+    tmp_path: Path, status: str, proof: str
+) -> None:
+    # Inception writes the spec before the code (ADR-0010), so its test files cannot exist yet.
+    # They are listed as not written yet, and from Built on a missing one fails (above).
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", status, [("SPEC-900-R1", proof)]),
+    })
+    reqs, _, problems = check(root)
+    assert problems == []
+    assert reqs[0].planned == (proof.split("`")[1].split("::")[0],)
+
+
+def test_a_spec_not_yet_built_still_fails_a_badly_shaped_proof_path(tmp_path: Path) -> None:
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", "Draft", [
+            ("SPEC-900-R1", "`services\\a\\missing.py`"),
+            ("SPEC-900-R2", "live: `notes/missing.md`"),
+        ]),
+    })
+    problems = _problems(root)
+    assert any("backslash" in p for p in problems)
+    assert any("notes/missing.md" in p and "docs/labs/" in p for p in problems)
+
+
+def test_main_lists_the_proof_files_not_written_yet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", "Draft", [("SPEC-900-R1", PROOF)]),
+    })
+    assert main(["--root", str(root)]) == 0
+    assert "| SPEC-900-R1 | Draft | — | — | services/a/test_a.py |" in capsys.readouterr().out
 
 
 def test_a_spec_without_a_status_line_fails_closed(tmp_path: Path) -> None:
@@ -216,7 +257,7 @@ def test_main_prints_the_table_and_returns_1_on_a_problem(
     })
     assert main(["--root", str(root)]) == 1
     out = capsys.readouterr()
-    assert "| SPEC-900-R1 | Built | — | — |" in out.out
+    assert "| SPEC-900-R1 | Built | — | — | — |" in out.out
     assert "nothing proves it" in out.err
 
 
@@ -279,7 +320,7 @@ def test_an_escaped_pipe_stays_inside_its_cell(tmp_path: Path) -> None:
     assert _problems(good) == []
     bad = _tree(tmp_path / "bad", {
         "docs/specs/SPEC-900-x.md": _spec(
-            "900", "Draft", [("SPEC-900-R1", "`services/a/missing.py::test_x[a\\|b]`")]
+            "900", "Built", [("SPEC-900-R1", "`services/a/missing.py::test_x[a\\|b]`")]
         ),
     })
     assert any("services/a/missing.py does not exist" in p for p in _problems(bad))
