@@ -178,6 +178,14 @@ moved, follow the step's intent and note the new label here.
      (alerts at 50 / 80 / 100 %). Elsewhere, change `currency` and the amounts in
      `infra/modules/azure-guardrails/guardrails.json`, and the documents the numbers test reads,
      in one commit.
+   - **Within 30 minutes, verify the alert e-mail.** Azure sends "Action required: Verify your
+     email for Azure Monitor action group". Click its link. Until the address is verified, the
+     action group sends it nothing: no brake notice and no test e-mail. The code expires 30
+     minutes after the save. If it has expired, open the action group → Edit → **Resend** (or
+     re-save it) and click the newest e-mail's link. Gmail may file the new code inside the old
+     conversation. A verified address stays verified for every action group in the directory.
+     The API shows no verification state (the receiver reads `Enabled` either way), so step 7's
+     test e-mail is the only check.
 6. **R15, the fence holds.** A new assignment can take up to 30 minutes to take effect. Then try a
    deployment over the cap; it must be refused:
 
@@ -239,6 +247,10 @@ moved, follow the step's intent and note the new label here.
   `actualcostbudget` was accepted at 14:20:57 UTC. The brake job started at 14:21:00 UTC and ended
   `Completed`, output `OK deleted <deployment>`. The deployment showed `Deleting` for about 30
   seconds, then the list was empty.
+- **The notice e-mail:** it did not arrive. The verification code sent at the apply had expired
+  unclicked (step 5). The portal's Test (sample type Budget) at 15:45 UTC gave Automation Runbook
+  `Success` and Email `Unknown`, with no end time. After a re-save, verification and a second
+  portal Test, the e-mail arrived.
 
 **Evidence SPEC-001-R14 (park, 2026-11-22):**
 - **First `make foundry-up`:** all 7 guardrail lines `PASS`, then Azure refused the deployment with

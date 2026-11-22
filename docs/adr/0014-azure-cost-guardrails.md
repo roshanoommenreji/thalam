@@ -176,6 +176,17 @@ failing on a capacity sent as text, and the new rule passing.
   refuses a `Failed` one until it is parked. `foundry-status` names the state when it isn't
   `Succeeded`. Nothing was spent wrongly: the brake still deleted the deployment.
 
+**Fourth finding, the brake's notice e-mail:**
+- **What happened:** the action group's test started the runbook, but no e-mail came. The portal's
+  test reported the e-mail as `Unknown`.
+- **Why:** Azure Monitor holds action-group e-mail until the address is verified with a one-time
+  code. The code expires 30 minutes after the action group is saved, and the one sent at
+  `guardrails-apply` had expired unclicked. The API shows the receiver as `Enabled` either way, so
+  neither `foundry-up` nor the sweep can see it.
+- **The fix:** Lab 00 now has a verify step right after the apply, and the test e-mail is its
+  check. Verification covers the whole directory, so it is done once. The brake never depended on
+  the e-mail: only the notice was missing.
+
 ## Consequences
 
 - **The worst case is bounded by the design, not by an alert.** A day at the cap costs at most about
