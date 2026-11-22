@@ -26,8 +26,11 @@ Fails closed, for every spec:
   * a cited ID that no spec defines, or that belongs to a Retired spec
 For every spec but a Retired one (its proof files may be gone), each path in "Proved by":
   * must be relative, use forward slashes, hold no "..", and stay inside the repository
-  * must be an existing file; a named test (less any [parametrize id]) must appear in it
+  * must not be a directory; a named test (less any [parametrize id]) must appear in its file
   * after live:, must also lie under docs/labs/ and be readable as UTF-8
+  * must exist, except in a Draft or Approved spec: Inception writes the spec before the code
+    (ADR-0010), so a file not written yet is listed in the table instead (SPEC-001-R8, amended
+    2026-11-23)
 And for a Built or Amended spec, also:
   * a requirement that no file cites and no valid live: lab names by its exact ID
   * a live: lab that still says _not run yet_ (its evidence is blank), reported once per lab
@@ -70,6 +73,7 @@ NOT_SCANNED = {
     "build", "dist", ".tox",
 }
 ENFORCED = {"Built", "Amended"}
+NOT_BUILT = {"Draft", "Approved"}  # Inception writes the spec before its proof files exist
 PENDING = "_not run yet_"  # a lab's placeholder for evidence that has not been recorded
 
 
@@ -81,6 +85,7 @@ class Requirement:
     proofs: tuple[str, ...]  # every backticked path in "Proved by", as written (maybe ::test)
     lives: tuple[str, ...]  # those of them named after live:
     proven_live: tuple[str, ...] = ()  # set by check(): valid labs that name this exact ID
+    planned: tuple[str, ...] = ()  # set by check(): proof files a Draft or Approved spec awaits
 
 
 def _read(path: Path) -> str | None:
@@ -187,23 +192,31 @@ def _path_problem(root: Path, path: str, *, lab: bool) -> str | None:
     target = (root / path).resolve()
     if not target.is_relative_to(root.resolve()):
         return f"proof {path} resolves outside the repository"
-    if not target.exists():
-        return f"proof {path} does not exist"
-    if not target.is_file():
+    if target.exists() and not target.is_file():
         return f"proof {path} is not a file"
     return None
 
 
-def _check_proofs(root: Path, req: Requirement) -> tuple[list[str], tuple[str, ...]]:
-    """Problems with a row's "Proved by" paths, and the labs that prove it live."""
+def _check_proofs(
+    root: Path, req: Requirement
+) -> tuple[list[str], tuple[str, ...], tuple[str, ...]]:
+    """Problems with a row's "Proved by" paths, the labs that prove it live, and the proof files
+    a Draft or Approved spec names before they are written (their shape is still checked)."""
     problems: list[str] = []
     proven: list[str] = []
+    planned: list[str] = []
     for token in req.proofs:
         path, *tests = token.split("::")
         lab = token in req.lives
         problem = _path_problem(root, path, lab=lab)
         if problem:
             problems.append(f"{req.rid}: {problem}")
+            continue
+        if not (root / path).exists():
+            if req.status in NOT_BUILT:
+                planned.append(path)
+            else:
+                problems.append(f"{req.rid}: proof {path} does not exist")
             continue
         if not tests and not lab:
             continue
@@ -217,7 +230,7 @@ def _check_proofs(root: Path, req: Requirement) -> tuple[list[str], tuple[str, .
                 problems.append(f"{req.rid}: test {name or '(no name)'} not found in {path}")
         if lab and re.search(rf"\b{re.escape(req.rid)}\b", text):
             proven.append(path)
-    return problems, tuple(proven)
+    return problems, tuple(proven), tuple(planned)
 
 
 def check(root: Path) -> tuple[list[Requirement], dict[str, set[str]], list[str]]:
@@ -233,9 +246,9 @@ def check(root: Path) -> tuple[list[Requirement], dict[str, set[str]], list[str]
         if req.status == "Retired":
             reqs.append(req)
             continue
-        found, proven = _check_proofs(root, req)
+        found, proven, planned = _check_proofs(root, req)
         problems += found
-        reqs.append(replace(req, proven_live=proven))
+        reqs.append(replace(req, proven_live=proven, planned=planned))
     by_id = {req.rid: req for req in reqs}
     for rid, files in sorted(cited.items()):
         where = ", ".join(sorted(files))
@@ -279,11 +292,15 @@ def _pending_evidence(root: Path, reqs: list[Requirement]) -> list[str]:
 
 
 def table(reqs: list[Requirement], cited: dict[str, set[str]]) -> list[str]:
-    lines = ["| Requirement | Spec status | Cited by | Live proof |", "|---|---|---|---|"]
+    lines = [
+        "| Requirement | Spec status | Cited by | Live proof | Not written yet |",
+        "|---|---|---|---|---|",
+    ]
     for req in reqs:
         files = ", ".join(sorted(cited.get(req.rid, set()))) or "—"
         live = ", ".join(req.proven_live) or "—"
-        lines.append(f"| {req.rid} | {req.status} | {files} | {live} |")
+        planned = ", ".join(req.planned) or "—"
+        lines.append(f"| {req.rid} | {req.status} | {files} | {live} | {planned} |")
     return lines
 
 
