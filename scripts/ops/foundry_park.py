@@ -43,6 +43,14 @@ INDUSTRY = re.compile(r"^[a-z][a-z_ -]*$")
 # The API version Microsoft's own Claude sample uses with modelProviderData (Azure-Samples/claude).
 DEPLOYMENT_API = "2025-10-01-preview"
 POLL_SECONDS, POLL_TIMES = 10, 60  # up to ten minutes
+CREATING = {"Creating", "Accepted", "Updating", "Running"}
+# A deletion is accepted at once and runs in the background: the brake's deployment stayed
+# listed as Deleting for about half a minute in the live test (2026-11-22).
+IN_FLIGHT = CREATING | {"Deleting"}
+
+
+def _state(d: dict[str, Any]) -> str:
+    return str(d.get("properties", {}).get("provisioningState", "?"))
 
 
 def _provider_data(env: dict[str, str]) -> dict[str, str] | None:
@@ -83,13 +91,19 @@ def up(runner: Runner, numbers: dict[str, Any], account: str, deployment: str,
     model = numbers["model"]
     existing = azure_cli.deployments(runner, numbers, account)
     if existing:
+        moving = sorted({_state(d) for d in existing} & IN_FLIGHT)
+        if moving:
+            print(f"WAIT  a deployment is {', '.join(moving)}; run `make foundry-up` again in a "
+                  "minute")
+            return 1
         mine = [d for d in existing if d.get("name") == deployment]
-        approved = all(d.get("sku", {}).get("capacity") == model["capacity"] for d in existing)
+        approved = all(d.get("sku", {}).get("capacity") == model["capacity"]
+                       and _state(d) == "Succeeded" for d in existing)
         if mine and approved and len(existing) == 1:
             print(f"UP  already ({_describe(mine[0])})")
             return 0
-        print("REFUSED  the account holds a deployment that is not the approved one; run "
-              "`make foundry-down` first")
+        print("REFUSED  the account holds a deployment that is not the approved, working one; "
+              "run `make foundry-down` first")
         return 1
     # `az cognitiveservices account deployment create` cannot send modelProviderData, which
     # Anthropic models require, so the deployment is PUT through Resource Manager directly.
@@ -109,7 +123,7 @@ def up(runner: Runner, numbers: dict[str, Any], account: str, deployment: str,
                                           "--body", json.dumps(body)]) or {}
         state = str(made.get("properties", {}).get("provisioningState", "Creating"))
         for _ in range(POLL_TIMES):
-            if state not in {"Creating", "Accepted", "Updating", "Running"}:
+            if state not in CREATING:
                 break
             sleep(POLL_SECONDS)
             made = azure_cli.az_json(runner, ["rest", "--method", "get", "--url", url]) or {}
@@ -158,7 +172,8 @@ def status(runner: Runner, numbers: dict[str, Any], account: str) -> int:
     if not existing:
         print("parked  (no deployment)")
     for d in existing:
-        print(f"up  {_describe(d)}")
+        state = _state(d)
+        print(f"{'up' if state == 'Succeeded' else state.lower()}  {_describe(d)}")
     return 0
 
 

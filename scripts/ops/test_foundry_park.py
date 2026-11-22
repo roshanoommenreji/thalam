@@ -97,6 +97,32 @@ def test_up_is_a_no_op_when_already_up() -> None:
     assert fake.puts == []
 
 
+@pytest.mark.parametrize("state", ["Deleting", "Creating"])
+def test_up_waits_while_a_deployment_is_in_flight(
+    state: str, capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Found by the live brake test (2026-11-22): the brake's DELETE is accepted at once, and the
+    # deployment stays listed as Deleting for about half a minute. It is not "up already".
+    fake = FakeAz()
+    fake.deployments = [_deployment(state=state)]
+    assert _park(fake, "up") == 1
+    assert fake.puts == []
+    out = capsys.readouterr().out
+    assert "WAIT" in out and state in out and "UP" not in out
+    _no_secrets(out)
+
+
+def test_up_refuses_a_failed_deployment_until_it_is_parked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeAz()
+    fake.deployments = [_deployment(state="Failed")]
+    assert _park(fake, "up") == 1
+    assert fake.puts == []
+    out = capsys.readouterr().out
+    assert "REFUSED" in out and "make foundry-down" in out
+
+
 def test_up_refuses_when_an_existing_deployment_is_over_the_approved_capacity() -> None:
     fake = FakeAz()
     fake.deployments = [_deployment(capacity=3)]
@@ -224,6 +250,14 @@ def test_status_says_up_or_parked(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "up" in out and "capacity 1" in out
     _no_secrets(out)
+
+
+def test_status_names_a_deployment_that_is_not_ready(capsys: pytest.CaptureFixture[str]) -> None:
+    fake = FakeAz()
+    fake.deployments = [_deployment(state="Deleting")]
+    assert _park(fake, "status") == 0
+    out = capsys.readouterr().out
+    assert out.startswith("deleting") and "up " not in out
 
 
 def test_env_is_read_as_the_sandbox_check_reads_it(tmp_path: Path) -> None:

@@ -54,11 +54,13 @@ def budget(name: str, spend: float = 0.0, **change: Any) -> dict[str, Any]:
     return {"name": name, "properties": props}
 
 
-def deployment(capacity: int = 1, model: str = "claude-haiku-5-5") -> dict[str, Any]:
+def deployment(capacity: int = 1, model: str = "claude-haiku-5-5",
+               state: str = "Succeeded") -> dict[str, Any]:
     return {
         "name": DEPLOYMENT,
         "sku": {"name": "GlobalStandard", "capacity": capacity},
-        "properties": {"model": {"format": "Anthropic", "name": model, "version": "2"}},
+        "properties": {"model": {"format": "Anthropic", "name": model, "version": "2"},
+                       "provisioningState": state},
     }
 
 
