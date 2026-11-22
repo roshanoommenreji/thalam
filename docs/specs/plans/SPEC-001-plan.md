@@ -2322,7 +2322,7 @@ Task 10G followed the steps above, with these differences:
   `guardrails.json`.
 - **The brake's role** is defined on the resource group and assigned on the Foundry account only:
   Azure has no resource-level assignable scope.
-- **`.claude/settings.json`** (R19) is applied by Roshan, not by Claude. The auto-mode check
-  rightly refused the agent editing its own permissions. Until then, the eight deny cases in
-  `test_budget_wiring.py` fail.
+- **`.claude/settings.json`** (R19): the auto-mode check rightly refused the agent editing its own
+  permissions. Roshan reviewed the proposed change, and Claude applied it at his explicit
+  instruction, in its own commit.
 - **Tests:** 146 → 257 collected.
