@@ -15,10 +15,13 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [x] Project charter, CLAUDE.md, README, roadmap (2026-11-18)
 - [x] Prior-art survey ([docs/prior-art.md](docs/prior-art.md))
 - [x] ADR-0001 to ADR-0009 written and Accepted
+- [x] Platform switch: Microsoft Foundry and Azure replace the direct Anthropic API and AWS
+      ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md), 2026-11-22)
 - [x] **Decisions closed 2026-11-18:**
   - D-1 Cost: plan $50, alarms $70 / $85, brake $95 ([ADR-0008](docs/adr/0008-cost-ceiling.md))
   - D-2 Name **Thalam**, Jira key **THL** ([ADR-0009](docs/adr/0009-name-and-jira-key.md))
-  - D-3 Model: local + hosted router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md))
+  - D-3 Model: local + hosted router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md));
+    hosted is Claude on Microsoft Foundry since 2026-11-22 ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md))
   - D-4 Sandboxes: a free Jira Cloud site and a ServiceNow Personal Developer Instance; never a
     real company tenant
   - D-5 Web chat + Slack approvals ([ADR-0007](docs/adr/0007-chat-surfaces.md))
@@ -27,10 +30,11 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [ ] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2)
 - [ ] SPEC-001 for Phase 0 and SPEC-002 for Phase 1 drafted and approved before building
 - [ ] Sign up: Jira Cloud free site (project `THL`), ServiceNow developer program + PDI, Slack
-      workspace app, Anthropic API key with a spend limit set in its console
+      workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group
 - [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
 - [ ] Jira project + epics mirroring this roadmap
-- [ ] AWS budget alarms and the hard stop, **before** any compute (Kaval Lab 01)
+- [ ] Azure budgets **before** the model deployment: $100 (alerts 70 / 85 / 95 %) and $20 on the
+      model (ADR-0012; Azure has no hard cap, so the router's cap is the brake from Phase 2)
 
 **Exit gate:** sandboxes reachable with read-only tokens; CI green on an empty package.
 
@@ -53,6 +57,10 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
       read, ServiceNow read), Postgres checkpointer, per-user threads
 - [ ] Guardrails v1 ([ADR-0005](docs/adr/0005-layered-guardrails.md)): identity, input screen,
       untrusted-text handling, output schema and escaping
+- [ ] Model router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md)): Ollama locally, Claude
+      on Microsoft Foundry hosted, model IDs priced on the day, the $20 monthly cap in code
+- [ ] Foundry IQ knowledge base (Free or Serverless tier only) for release policies, runbooks, CAB
+      rules and freeze calendars; Postgres stays the record for the release graph (ADR-0012)
 - [ ] Tracing to Langfuse; token cost per conversation recorded
 - [ ] Eval harness: 20 golden release questions + 10 injection cases (Kaval ADR-0018, 0072),
       as a CI gate
@@ -94,17 +102,21 @@ sandboxes; a denied proposal changes nothing.
 - [ ] DORA's key metrics per team (deployment frequency, lead time, change failure rate, time to
       restore)
 
-## Phase 7 — Kubernetes and AWS · `[ ]`
+## Phase 7 — Kubernetes and Azure · `[ ]`
 
-Kaval's path, reused: k3d → k3s on Graviton, Helm, Flux, staging on demand, signed images,
-promotion by digest, restore drills.
+Kaval's path, moved to Azure ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)):
+
+1. Extend Phase 0's budgets to cover hosting and wire the $95 brake (stop staging).
+2. k3d, then k3s on a Cobalt Arm VM or AKS with an Arm node pool, chosen and priced on the day.
+3. Helm, Flux, staging on demand, signed images, promotion by digest, restore drills.
+4. Secrets move from `.env` to Azure Key Vault.
 
 ## Phase 8 — Harden and publish · `[ ]`
 
-Threat model, red-team pass against OWASP's LLM and agentic top-10 lists, access review,
-repo public.
+Threat model, red-team pass against OWASP's LLM and agentic top-10 lists, and a final access
+review. The repo has been public since Phase 0 ([ADR-0011](docs/adr/0011-phase-0-shape.md)).
 
 ## Beyond v1 — future scope
 
 See [docs/future-scope.md](docs/future-scope.md): Kaval integration, Thalam as an MCP
-server, multi-tenant, bigger-model escalation.
+server, multi-tenant, risk scoring from history, Work IQ and Teams.

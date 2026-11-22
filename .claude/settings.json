@@ -2,15 +2,15 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(aws sts get-caller-identity:*)",
-      "Bash(aws ce get-cost-and-usage:*)",
-      "Bash(aws budgets describe-budgets:*)",
-      "Bash(aws logs tail:*)",
-      "Bash(aws ec2 describe-*:*)",
-      "Bash(aws autoscaling describe-*:*)",
-      "Bash(aws ecr describe-*:*)",
-      "Bash(aws iam list-*:*)",
-      "Bash(aws iam get-*:*)",
+      "Bash(az account show:*)",
+      "Bash(az group list:*)",
+      "Bash(az group show:*)",
+      "Bash(az cognitiveservices account list:*)",
+      "Bash(az cognitiveservices account show:*)",
+      "Bash(az cognitiveservices account deployment list:*)",
+      "Bash(az cognitiveservices account deployment show:*)",
+      "Bash(az consumption budget list:*)",
+      "Bash(az consumption budget show:*)",
 
       "Bash(terraform fmt:*)",
       "Bash(terraform validate:*)",
@@ -43,7 +43,6 @@
       "Bash(make help:*)",
       "Bash(make test:*)",
       "Bash(make lint:*)",
-      "Bash(make cost-report:*)",
 
       "Bash(ruff check:*)",
       "Bash(mypy:*)",
@@ -57,12 +56,14 @@
       "Bash(terraform destroy:*)",
       "Bash(kubectl delete:*)",
       "Bash(kubectl apply:*)",
-      "Bash(aws lambda invoke:*)",
       "Bash(make up:*)",
       "Bash(make down:*)",
       "Bash(make nuke:*)",
       "Bash(make lab-up:*)",
       "Bash(git push:*)"
+    ],
+    "deny": [
+      "Bash(az cognitiveservices account keys list:*)"
     ]
   }
 }

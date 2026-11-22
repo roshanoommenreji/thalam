@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import http.client
 import http.server
+import json
 import threading
 import urllib.error
 import urllib.parse
@@ -13,7 +14,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from check_sandboxes import Result, _is_set, _send, load_env, render, run_all, urllib_http
+from check_sandboxes import (
+    Result,
+    _is_set,
+    _send,
+    check_foundry,
+    load_env,
+    render,
+    run_all,
+    urllib_http,
+)
 
 # xxxx- values: gitleaks' allowlist clears them, and none is a real credential.
 ENV = {
@@ -24,10 +34,14 @@ ENV = {
     "SERVICENOW_READ_USER": "thalam.read",
     "SERVICENOW_READ_PASSWORD": "xxxx-sn-password",
     "SLACK_BOT_TOKEN": "xxxx-slack-token",
-    "ANTHROPIC_API_KEY": "xxxx-anthropic-key",
+    "ANTHROPIC_FOUNDRY_RESOURCE": "xxxx-foundry",
+    "ANTHROPIC_FOUNDRY_API_KEY": "xxxx-foundry-key",
+    "LLM_HOSTED_MODEL": "xxxx-claude-deployment",
 }
 
 SYS_ID = "0123456789abcdef0123456789abcdef"
+COUNT_TOKENS_URL = "https://xxxx-foundry.services.ai.azure.com/anthropic/v1/messages/count_tokens"
+FOUNDRY_ROUTE = ("POST", COUNT_TOKENS_URL)
 PATCH_PATH = f"/api/now/table/change_request/{SYS_ID}"
 Answer = tuple[int, object] | Exception
 READ_ONLY: dict[tuple[str, str], Answer] = {
@@ -43,7 +57,7 @@ READ_ONLY: dict[tuple[str, str], Answer] = {
         200,
         {"ok": True, "channels": [{"name": "thalam"}]},
     ),
-    ("GET", "api.anthropic.com/v1/models"): (200, {"data": []}),
+    FOUNDRY_ROUTE: (200, {"input_tokens": 8}),
 }
 
 
@@ -116,14 +130,15 @@ def test_a_slack_app_in_other_channels_fails() -> None:
 
 def test_a_missing_or_placeholder_setting_fails_its_group_without_calling_it() -> None:
     env = {k: v for k, v in ENV.items() if k != "SLACK_BOT_TOKEN"}
-    env["ANTHROPIC_API_KEY"] = "placeholder"
+    env["ANTHROPIC_FOUNDRY_API_KEY"] = "placeholder"
     fake = FakeHttp()
     results = run_all(env, fake)
     slack = _one(results, "R12")
     assert not slack.ok and slack.detail == "not set in .env: SLACK_BOT_TOKEN"
-    assert not _one(results, "R13").ok
+    foundry = _one(results, "R13")
+    assert not foundry.ok and foundry.detail == "not set in .env: ANTHROPIC_FOUNDRY_API_KEY"
     hosts = {urllib.parse.urlsplit(url).hostname or "" for _, url in fake.calls}
-    skipped = ("slack.com", "anthropic.com")
+    skipped = ("slack.com", "services.ai.azure.com")
     assert not [h for h in hosts for d in skipped if h == d or h.endswith("." + d)], hosts
 
 
@@ -229,8 +244,8 @@ def test_a_bug_or_a_bad_request_in_one_group_leaks_nothing_and_spares_the_others
     results = run_all(ENV, FakeHttp({("GET", "/project/search"): invalid}))
     assert _one(results, "R10").detail == "unreachable (InvalidURL)"
     assert all(r.ok for r in results if not r.name.startswith("R10"))
-    bug = RuntimeError("xxxx-anthropic-key blew up")
-    results = run_all(ENV, FakeHttp({("GET", "api.anthropic.com/v1/models"): bug}))
+    bug = RuntimeError("xxxx-foundry-key blew up")
+    results = run_all(ENV, FakeHttp({FOUNDRY_ROUTE: bug}))
     assert _one(results, "R13").detail == "error (RuntimeError)"
     assert len([r for r in results if r.ok]) == 6
     text = "\n".join(render(results))
@@ -266,6 +281,76 @@ def test_servicenow_row_with_an_odd_sys_id_is_never_patched() -> None:
     assert not write.ok
     assert write.detail == "skipped: the row's sys_id is not a valid id"
     assert not any(method == "PATCH" for method, _ in fake.calls)
+
+
+def test_the_foundry_check_only_counts_tokens_on_the_named_deployment() -> None:
+    sent: list[tuple[str, str, dict[str, str], bytes | None]] = []
+
+    def http(
+        method: str, url: str, headers: Mapping[str, str], body: bytes | None
+    ) -> tuple[int, object]:
+        sent.append((method, url, dict(headers), body))
+        return 200, {"input_tokens": 8}
+
+    [result] = check_foundry(ENV, http)
+    assert result.ok and result.detail == "HTTP 200"
+    [(method, url, headers, body)] = sent
+    assert (method, url) == FOUNDRY_ROUTE
+    assert headers["x-api-key"] == "xxxx-foundry-key"
+    assert headers["anthropic-version"] == "2023-06-01"
+    assert json.loads(body or b"") == {
+        "model": "xxxx-claude-deployment",
+        "messages": [{"role": "user", "content": "ping"}],
+    }
+
+
+@pytest.mark.parametrize(
+    "resource",
+    [
+        "https://xxxx-foundry.services.ai.azure.com/anthropic",
+        "xxxx-foundry.services.ai.azure.com",
+        "xxxx_foundry",
+        "-xxxx",
+        "x",
+    ],
+)
+def test_a_foundry_resource_that_is_not_a_bare_name_fails_without_sending_the_key(
+    resource: str,
+) -> None:
+    fake = FakeHttp()
+    [result] = check_foundry({**ENV, "ANTHROPIC_FOUNDRY_RESOURCE": resource}, fake)
+    assert not result.ok
+    assert result.detail == (
+        "ANTHROPIC_FOUNDRY_RESOURCE must be the resource name only: "
+        "lowercase letters, digits and hyphens"
+    )
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize(
+    ("status", "detail"),
+    [
+        (401, "HTTP 401 (check ANTHROPIC_FOUNDRY_API_KEY)"),
+        (403, "HTTP 403 (check ANTHROPIC_FOUNDRY_API_KEY)"),
+        (404, "HTTP 404 (check the resource and deployment names)"),
+        (429, "HTTP 429"),
+    ],
+)
+def test_a_refused_foundry_call_fails_with_a_hint(status: int, detail: str) -> None:
+    results = run_all(ENV, FakeHttp({FOUNDRY_ROUTE: (status, {"type": "error"})}))
+    foundry = _one(results, "R13")
+    assert not foundry.ok
+    assert foundry.detail == detail
+
+
+@pytest.mark.parametrize(
+    "payload", [None, {}, {"input_tokens": "8"}, {"input_tokens": True}, {"type": "message"}]
+)
+def test_a_foundry_answer_without_a_token_count_fails(payload: object) -> None:
+    results = run_all(ENV, FakeHttp({FOUNDRY_ROUTE: (200, payload)}))
+    foundry = _one(results, "R13")
+    assert not foundry.ok
+    assert foundry.detail == "HTTP 200, but the answer has no input_tokens count"
 
 
 Seen = list[tuple[str, str | None]]

@@ -1,9 +1,10 @@
 # gitleaks configuration for Thalam (SPEC-001-R6).
 #
 # This repository is public from its first push (ADR-0011), so the HISTORY must be clean, not
-# just the working tree. Copied from Kaval's and trimmed. Three rules are added for CLAUDE.md
-# rule 6 (no real instance addresses or tenant IDs), and docs and .env.example are no longer
-# exempt: they are where a real address is most likely to be pasted.
+# just the working tree. Copied from Kaval's and trimmed. Rules are added for CLAUDE.md rule 6
+# (no real instance addresses or tenant IDs) for Atlassian, ServiceNow and Azure (ADR-0012), and
+# docs and .env.example are no longer exempt: they are where a real address is most likely to be
+# pasted.
 #
 #   gitleaks git --staged    the pre-commit hook (scripts/dev/install-hooks.sh)
 #   gitleaks git .           the whole history (CI's `secrets` job, `make secrets-scan`)
@@ -52,6 +53,35 @@ id = "atlassian-cloud-id"
 description = "An Atlassian cloud ID (tenant) in an API address; keep it in .env as JIRA_SANDBOX_CLOUD_ID"
 regex = '''(?i)atlassian\.com/ex/(?:jira|confluence)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
 keywords = ["atlassian.com/ex/"]
+tags = ["identifier", "rule-6"]
+
+# Azure (ADR-0012). A resource's name is its address: <name>.services.ai.azure.com for Foundry, and
+# likewise for Azure OpenAI, AI Services, Foundry IQ (search.windows.net), Key Vault, storage,
+# registries, web apps, container apps and managed databases. Placeholders pass for the same
+# reason as above (`<your-resource>.`, `{resource}.`), and so do Microsoft's own hosts that have no
+# name in front (`https://cognitiveservices.azure.com/.default`, `ai.azure.com`). Every dot may be
+# regex-escaped, the form a grep command would leak (ADR-0011).
+[[rules]]
+id = "real-azure-resource"
+description = "A real Azure resource address; write <your-resource>.services.ai.azure.com instead and keep the name in .env"
+regex = '''(?i)\b[a-z0-9][a-z0-9-]*\\?\.(?:services\\?\.ai\\?\.azure\\?\.com|(?:openai|cognitiveservices)\\?\.azure\\?\.com|vault\\?\.azure\\?\.net|(?:search|blob\\?\.core)\\?\.windows\\?\.net|(?:postgres|mysql)\\?\.database\\?\.azure\\?\.com|azurecr\\?\.io|azurewebsites\\?\.net|azurecontainerapps\\?\.io)\b'''
+keywords = ["azure", "windows"]
+tags = ["identifier", "rule-6"]
+
+# An Entra tenant or Azure subscription ID is a bare GUID, so it is caught by its context: an az
+# flag, a *_id setting, an ARM path or a login URL. The all-zero GUID is cleared by the allowlist.
+[[rules]]
+id = "azure-tenant-or-subscription-id"
+description = "An Entra tenant or Azure subscription ID; keep it out of committed files (the az CLI already knows it)"
+regex = '''(?i)(?:--(?:tenant|subscription)[\s=]+["']?|(?:tenant|subscription)[_-]?id["'\s:=]+["']?|/subscriptions/|microsoftonline\.com/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'''
+keywords = ["tenant", "subscription", "microsoftonline"]
+tags = ["identifier", "rule-6"]
+
+[[rules]]
+id = "entra-tenant-domain"
+description = "A real Entra tenant domain; write <your-tenant>.onmicrosoft.com instead"
+regex = '''(?i)\b[a-z0-9][a-z0-9-]*\\?\.onmicrosoft\\?\.com\b'''
+keywords = ["onmicrosoft"]
 tags = ["identifier", "rule-6"]
 
 # ─── allowlist ───────────────────────────────────────────────
