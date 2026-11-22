@@ -15,11 +15,11 @@ resource "azurerm_consumption_budget_resource_group" "budget" {
 
   # thalam-model counts the Foundry account only; thalam-total counts the whole group.
   dynamic "filter" {
-    for_each = each.value.scope == "foundry-account" ? [azurerm_cognitive_account.foundry.id] : []
+    for_each = each.value.scope == "foundry-account" ? ["foundry"] : []
     content {
       dimension {
         name   = "ResourceId"
-        values = [lower(filter.value)]
+        values = [lower(azurerm_cognitive_account.foundry.id)]
       }
     }
   }

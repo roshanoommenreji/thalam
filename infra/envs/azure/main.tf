@@ -27,7 +27,8 @@ provider "azurerm" {
 }
 
 variable "foundry_name" {
-  type = string
+  type      = string
+  sensitive = true
 }
 
 variable "alert_email" {

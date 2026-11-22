@@ -49,16 +49,27 @@ def load_numbers() -> dict[str, Any]:
 
 
 def read_env(path: Path = ENV_FILE) -> dict[str, str]:
-    """KEY=VALUE lines; comments and blanks skipped; quotes stripped. Missing file: empty."""
+    """KEY=value lines, read exactly as scripts/dev/check_sandboxes.py reads them: a BOM, blank
+    lines and comments skipped, `export ` allowed, a quoted value runs to its closing quote, an
+    unquoted one stops at ' #'. The file is read as data, never run as shell."""
     out: dict[str, str] = {}
     if not path.is_file():
         return out
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():  # PowerShell 5.1 adds a BOM
         line = raw.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, value = line.partition("=")
-            out[key.strip()] = value.strip().strip("\"'")
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        out[re.sub(r"^export\s+", "", key.strip())] = _clean_value(value)
     return out
+
+
+def _clean_value(raw: str) -> str:
+    value = raw.strip()
+    if value[:1] in ("\"", "'"):
+        end = value.find(value[0], 1)
+        return value[1:end] if end != -1 else value[1:]
+    return re.split(r"(?:^|\s)#", raw, maxsplit=1)[0].strip()
 
 
 def real_az(args: list[str]) -> tuple[int, str, str]:

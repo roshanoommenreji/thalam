@@ -7,6 +7,9 @@ does (JSON on stdout, an error code on stderr), and records every call.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import azure_cli
 import foundry_park
 import pytest
 from az_fakes import ACCOUNT_NAME, DEPLOYMENT, ENV, GROUP, NUMBERS, RG, SUB, FakeAz
@@ -179,6 +182,24 @@ def test_status_says_up_or_parked(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "up" in out and "capacity 1" in out
     _no_secrets(out)
+
+
+def test_env_is_read_as_the_sandbox_check_reads_it(tmp_path: Path) -> None:
+    env = tmp_path / ".env"
+    env.write_text(
+        "﻿# comment\n"
+        "ANTHROPIC_FOUNDRY_RESOURCE=xxxx-foundry   # the name only\n"
+        "export LLM_HOSTED_MODEL=xxxx-haiku\n"
+        'THALAM_ALERT_EMAIL="you@example.com"\n'
+        "SERVICENOW_READ_PASSWORD='a$(b) #c'\n",
+        encoding="utf-8",
+    )
+    assert azure_cli.read_env(env) == {
+        "ANTHROPIC_FOUNDRY_RESOURCE": "xxxx-foundry",
+        "LLM_HOSTED_MODEL": "xxxx-haiku",
+        "THALAM_ALERT_EMAIL": "you@example.com",
+        "SERVICENOW_READ_PASSWORD": "a$(b) #c",
+    }
 
 
 def test_an_unknown_command_is_refused() -> None:

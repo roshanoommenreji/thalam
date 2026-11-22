@@ -1,8 +1,9 @@
-# Both values come from .env through the Makefile (TF_VAR_*), so neither is in git (CLAUDE.md rule 6).
+# Both values come from .env through scripts/ops/tf.py (TF_VAR_*), so neither is in git (rule 6).
 
 variable "foundry_name" {
   description = "The Foundry account's name, which is also its subdomain (its address)."
   type        = string
+  sensitive   = true # hidden in plan output, like the e-mail
 
   validation {
     condition     = can(regex("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$", var.foundry_name))
