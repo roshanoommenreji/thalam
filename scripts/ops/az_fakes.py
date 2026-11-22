@@ -17,7 +17,15 @@ RG = NUMBERS["resource_group"]
 SUB = "00000000-0000-0000-0000-000000000000"
 ACCOUNT_NAME = "xxxx-foundry"
 DEPLOYMENT = "xxxx-haiku"
-ENV = {"ANTHROPIC_FOUNDRY_RESOURCE": ACCOUNT_NAME, "LLM_HOSTED_MODEL": DEPLOYMENT}
+ORG = "xxxx Org"
+ENV = {
+    "ANTHROPIC_FOUNDRY_RESOURCE": ACCOUNT_NAME,
+    "LLM_HOSTED_MODEL": DEPLOYMENT,
+    # Anthropic's attestation fields (placeholders): sent with every Claude deployment.
+    "CLAUDE_ORGANIZATION_NAME": ORG,
+    "CLAUDE_COUNTRY_CODE": "XX",
+    "CLAUDE_INDUSTRY": "technology",
+}
 GROUP = f"/subscriptions/{SUB}/resourceGroups/{RG}"
 ACTION_GROUP = NUMBERS["brake"]["action_group"]
 ACTION_GROUP_ID = f"{GROUP}/providers/microsoft.insights/actionGroups/{ACTION_GROUP}"
@@ -73,6 +81,8 @@ class FakeAz:
         }}]
         self.deployments: list[dict[str, Any]] = []
         self.fail_create: str | None = None
+        self.puts: list[dict[str, Any]] = []
+        self.poll_states: list[str] = ["Creating", "Succeeded"]
         self.resources: list[dict[str, Any]] | None = [
             {"type": t, "resourceGroup": RG, "tags": dict(NUMBERS["tags"]),
              "name": ACCOUNT_NAME if t == "Microsoft.CognitiveServices/accounts" else "xxxx"}
@@ -83,15 +93,13 @@ class FakeAz:
     def __call__(self, args: list[str]) -> tuple[int, str, str]:
         self.calls.append(args)
         if args[:2] == ["rest", "--method"]:
-            return self._rest(args[args.index("--url") + 1])
+            url = args[args.index("--url") + 1]
+            if "/Microsoft.CognitiveServices/accounts/" in url and "/deployments/" in url:
+                body = json.loads(args[args.index("--body") + 1]) if "--body" in args else None
+                return self._deployment_rest(args[2], url, body)
+            return self._rest(url)
         if args[:4] == ["cognitiveservices", "account", "deployment", "list"]:
             return self._ok(self.deployments)
-        if args[:4] == ["cognitiveservices", "account", "deployment", "create"]:
-            if self.fail_create:
-                return 1, "", f"(RequestDisallowedByPolicy) {self.fail_create} {GROUP}"
-            capacity = int(args[args.index("--sku-capacity") + 1])
-            self.deployments.append(deployment(capacity))
-            return self._ok(self.deployments[-1])
         if args[:4] == ["cognitiveservices", "account", "deployment", "delete"]:
             name = args[args.index("--deployment-name") + 1]
             self.deployments = [d for d in self.deployments if d["name"] != name]
@@ -119,6 +127,31 @@ class FakeAz:
         if url.split("?")[0].endswith("/jobSchedules"):
             return self._ok({"value": self.job_schedules})
         raise AssertionError(f"unexpected url: {url}")
+
+    def _deployment_rest(self, method: str, url: str,
+                         body: dict[str, Any] | None) -> tuple[int, str, str]:
+        """PUT creates the deployment (provisioning starts); GET reports the next state."""
+        assert url.startswith("https://management.azure.com/subscriptions/{subscriptionId}/"), url
+        name = url.split("?")[0].rsplit("/", 1)[1]
+        if method == "put":
+            assert body is not None
+            self.puts.append(body)
+            if self.fail_create:
+                return 1, "", f"(RequestDisallowedByPolicy) {self.fail_create} {GROUP}"
+            made = {**deployment(int(body["sku"]["capacity"])), "name": name}
+            made["properties"]["provisioningState"] = "Creating"
+            self.deployments.append(made)
+            return self._ok(made)
+        if method == "get":
+            state = self.poll_states.pop(0) if self.poll_states else "Succeeded"
+            found = next((d for d in self.deployments if d["name"] == name), None)
+            if found is None:
+                return self._missing("DeploymentNotFound")
+            found["properties"]["provisioningState"] = state
+            if state == "Failed":
+                found["properties"]["error"] = {"code": "AnthropicOrganizationCreationException"}
+            return self._ok(found)
+        raise AssertionError(f"unexpected deployment call: {method} {url}")
 
     @staticmethod
     def _ok(body: object) -> tuple[int, str, str]:

@@ -12,18 +12,18 @@ from pathlib import Path
 import azure_cli
 import foundry_park
 import pytest
-from az_fakes import ACCOUNT_NAME, DEPLOYMENT, ENV, GROUP, NUMBERS, RG, SUB, FakeAz
+from az_fakes import ACCOUNT_NAME, DEPLOYMENT, ENV, GROUP, NUMBERS, ORG, RG, SUB, FakeAz
 from az_fakes import budget as _budget
 from az_fakes import deployment as _deployment
 
 
 def _park(fake: FakeAz, command: str, env: dict[str, str] = ENV) -> int:
-    code: int = foundry_park.main([command], runner=fake, env=env)
+    code: int = foundry_park.main([command], runner=fake, env=env, sleep=lambda _: None)
     return code
 
 
 def _no_secrets(out: str) -> None:
-    for secret in (ACCOUNT_NAME, DEPLOYMENT, SUB, GROUP):
+    for secret in (ACCOUNT_NAME, DEPLOYMENT, SUB, GROUP, ORG):
         assert secret not in out
 
 
@@ -32,19 +32,61 @@ def test_up_creates_the_approved_deployment_when_the_guardrails_hold(
 ) -> None:
     fake = FakeAz()
     assert _park(fake, "up") == 0
-    (create,) = fake.made("create")
-    flags = dict(zip(create[4::2], create[5::2], strict=False))
+    (body,) = fake.puts
     model = NUMBERS["model"]
-    assert flags["--resource-group"] == RG
-    assert flags["--name"] == ACCOUNT_NAME
-    assert flags["--deployment-name"] == DEPLOYMENT
-    assert flags["--model-name"] == model["name"]
-    assert flags["--model-version"] == model["version"]
-    assert flags["--model-format"] == model["format"]
-    assert flags["--sku-name"] == model["sku"]
-    assert flags["--sku-capacity"] == str(model["capacity"])
+    assert body["sku"] == {"name": model["sku"], "capacity": model["capacity"]}
+    assert body["properties"]["model"] == {
+        "format": model["format"], "name": model["name"], "version": model["version"],
+    }
+    (put,) = [c for c in fake.calls if c[:3] == ["rest", "--method", "put"]]
+    url = put[put.index("--url") + 1]
+    assert f"/resourceGroups/{RG}/" in url and url.split("?")[0].endswith(
+        f"/accounts/{ACCOUNT_NAME}/deployments/{DEPLOYMENT}")
+    assert "api-version=" in url
     out = capsys.readouterr().out
     assert "UP" in out and "capacity 1" in out
+    _no_secrets(out)
+
+
+def test_up_sends_anthropic_s_attestation_fields_from_env() -> None:
+    # Azure signs the Anthropic Marketplace offer with these (Lab 00 step 3); they live in .env.
+    fake = FakeAz()
+    assert _park(fake, "up") == 0
+    assert fake.puts[0]["properties"]["modelProviderData"] == {
+        "organizationName": ORG, "countryCode": "XX", "industry": "technology",
+    }
+
+
+@pytest.mark.parametrize(("key", "bad"), [
+    ("CLAUDE_ORGANIZATION_NAME", ""),
+    ("CLAUDE_COUNTRY_CODE", "India"),
+    ("CLAUDE_INDUSTRY", "Technology"),
+])
+def test_up_refuses_without_valid_attestation_fields(
+    key: str, bad: str, capsys: pytest.CaptureFixture[str],
+) -> None:
+    fake = FakeAz()
+    assert _park(fake, "up", {**ENV, key: bad}) == 1
+    assert fake.calls == []
+    assert key in capsys.readouterr().out
+
+
+def test_up_waits_until_the_deployment_has_succeeded(capsys: pytest.CaptureFixture[str]) -> None:
+    fake = FakeAz()
+    fake.poll_states = ["Creating", "Creating", "Succeeded"]
+    assert _park(fake, "up") == 0
+    polls = [c for c in fake.calls if c[:3] == ["rest", "--method", "get"] and "/deployments/" in
+             c[c.index("--url") + 1]]
+    assert len(polls) == 3
+    assert "UP" in capsys.readouterr().out
+
+
+def test_up_reports_a_failed_provisioning_by_its_code(capsys: pytest.CaptureFixture[str]) -> None:
+    fake = FakeAz()
+    fake.poll_states = ["Creating", "Failed"]
+    assert _park(fake, "up") == 1
+    out = capsys.readouterr().out
+    assert "AnthropicOrganizationCreationException" in out and "make foundry-down" in out
     _no_secrets(out)
 
 
@@ -52,19 +94,19 @@ def test_up_is_a_no_op_when_already_up() -> None:
     fake = FakeAz()
     fake.deployments = [_deployment()]
     assert _park(fake, "up") == 0
-    assert fake.made("create") == []
+    assert fake.puts == []
 
 
 def test_up_refuses_when_an_existing_deployment_is_over_the_approved_capacity() -> None:
     fake = FakeAz()
     fake.deployments = [_deployment(capacity=3)]
     assert _park(fake, "up") == 1
-    assert fake.made("create") == []
+    assert fake.puts == []
 
 
 def _refused(fake: FakeAz, capsys: pytest.CaptureFixture[str], reason: str) -> None:
     assert _park(fake, "up") == 1
-    assert fake.made("create") == []
+    assert fake.puts == []
     out = capsys.readouterr().out
     assert "REFUSED" in out and reason in out, out
     _no_secrets(out)

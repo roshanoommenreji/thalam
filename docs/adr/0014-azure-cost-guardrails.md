@@ -155,6 +155,18 @@ request sends a number, text or nothing. A missing capacity is still refused by 
 The evaluator now refuses to compare different types, as Azure does. A new test shows the old rule
 failing on a capacity sent as text, and the new rule passing.
 
+**Second finding, the same day:**
+- **What happened:** the first real `make foundry-up` passed every guardrail, and Azure then
+  refused the deployment with `InvalidModelProviderData`.
+- **Why:** Anthropic models need a `modelProviderData` block (organization name, country code,
+  industry) on every deployment. Azure uses it to accept Anthropic's Commercial Terms through the
+  Marketplace. The Azure CLI has no flag for it, and the published API spec does not list it
+  (Azure/azure-rest-api-specs issue 43610).
+- **The fix:** `foundry-up` now sends the deployment with `az rest` (API `2025-10-01-preview`, as
+  in Microsoft's Azure-Samples/claude), takes the three fields from `.env`, and polls until
+  provisioning ends. They are attestations about Roshan's organization, so they are his to enter
+  and never in git.
+
 ## Consequences
 
 - **The worst case is bounded by the design, not by an alert.** A day at the cap costs at most about
