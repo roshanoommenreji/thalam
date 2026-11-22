@@ -26,9 +26,14 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+# The dashboard's HTML templates read better unwrapped. Every other rule still applies; Kaval
+# leaves its dashboard generator out of ruff altogether.
+"scripts/tracking/dashboard.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["services", "scripts/dev", "scripts/ops", "infra"]
+testpaths = ["services", "scripts/dev", "scripts/ops", "scripts/tracking", "infra"]

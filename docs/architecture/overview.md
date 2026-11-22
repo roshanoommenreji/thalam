@@ -2,6 +2,11 @@
 
 Updated whenever a component is added, removed or rewired (Definition of Done, item 6).
 
+The detailed version is data: [architecture.toml](architecture.toml) holds every part with its
+definition and what flows in and out, the step-by-step flows, the Azure resources and how the
+brake is wired, the DevOps path and a glossary. `make dashboard` draws it. Change both files
+together.
+
 ## Components
 
 ```

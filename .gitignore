@@ -68,6 +68,12 @@ pgdata/
 .DS_Store
 Thumbs.db
 
+# ─── the dashboard: generated, and its saved copies of Jira and Azure ─
+# The page links the planning site and is rebuilt by `make dashboard`, so none of it is committed.
+docs/dashboard.html
+docs/jira-stories.json
+docs/azure-snapshot.json
+
 # ─── editors ───────────────────────────────────────────────
 .idea/
 .vscode/*

@@ -12,7 +12,7 @@ sync: ## Install exactly what uv.lock says into .venv (what CI uses)
 .PHONY: lint
 lint: ## ruff + mypy --strict (SPEC-001-R4)
 	uv run ruff check services scripts infra
-	uv run mypy services scripts/dev scripts/ops infra/modules/azure-guardrails
+	uv run mypy services scripts/dev scripts/ops scripts/tracking infra/modules/azure-guardrails
 
 .PHONY: test
 test: ## pytest, then the spec coverage table (SPEC-001-R8)
@@ -57,3 +57,13 @@ foundry-status: ## Up or parked
 .PHONY: azure-sweep
 azure-sweep: ## Read-only exit gate: fails on anything billable left behind (SPEC-001-R17)
 	uv run python scripts/ops/azure_sweep.py $(ARGS)
+
+# ─── The dashboard: a generated mirror of the repo (Definition of Done item 9) ───
+
+.PHONY: dashboard
+dashboard: ## Rebuild docs/dashboard.html from ROADMAP.md, specs, labs, ADRs, git and saved copies
+	uv run python scripts/tracking/dashboard.py
+
+.PHONY: dashboard-azure
+dashboard-azure: ## Read this month's spend and the deployment's state again (read-only), then rebuild
+	uv run python scripts/tracking/dashboard.py --azure
