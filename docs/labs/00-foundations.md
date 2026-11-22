@@ -11,12 +11,14 @@ in `.env`.
 - gitleaks 8.30.1: `scoop install gitleaks` or `winget install gitleaks` on Windows, a release binary elsewhere.
 - The GitHub CLI, logged in.
 - GNU Make: `scoop install make` on Windows.
-- The Azure CLI.
+- The Azure CLI, and Terraform 1.11 or later (`winget install Hashicorp.Terraform`).
 - A card-backed **pay-as-you-go** Azure subscription. Claude on Foundry refuses free-trial,
   student and credit-only subscriptions.
 - A browser.
 
-**Cost:** about $0. Idle Foundry resources cost nothing, and the check only counts tokens.
+**Cost:** about ₹0. An idle Foundry resource costs nothing, the deployment is parked between
+sessions, the guardrails are free, and the model calls are token counts and one call of a few
+tokens.
 
 ## 1. Jira planning space — SPEC-001-R9
 
@@ -123,69 +125,107 @@ inviting → Continue with Free), so the bot never sits beside another project's
   added to #thalam-releases".
 - **Check:** `make sandboxes` gave R12 auth.test `HTTP 200` and R12 `channels: thalam-releases`.
 
-## 5. Microsoft Foundry: a Claude deployment behind two budgets — SPEC-001-R13
+## 5. Microsoft Foundry behind the guardrails — SPEC-001-R13 to R20
 
 The hosted model is Claude on Microsoft Foundry, billed on the Azure invoice
 ([ADR-0012](../adr/0012-microsoft-foundry-and-azure.md)). Azure pay-as-you-go has **no hard
-spending limit**: a budget only sends alerts, and cost data can lag a day or more. So the order
-matters: **budgets first, the model last.** Portal labels below were checked on 2026-11-22; if one
-has moved, follow the step's intent and note the new label here.
+spending limit**: a budget only sends alerts, and cost data can lag up to three days. So the fence
+and the brake go up first and the model last ([ADR-0014](../adr/0014-azure-cost-guardrails.md)).
+One `terraform apply` builds everything except the deployment, which `make foundry-up` creates
+and `make foundry-down` (or the brake) removes. Portal labels were checked on 2026-11-22; if one has
+moved, follow the step's intent and note the new label here.
 
 1. **Sign in:** `az login`. Add `--tenant <your-tenant-id>` if your account has more than one
    directory. Device-code login is blocked when Entra security defaults are on. Never paste the
    tenant or subscription ID into a file or a chat.
-2. **Resource group:** `az group create --name rg-thalam --location eastus2`. West US 3 also works:
-   both offer Claude Haiku and Opus as Global Standard (checked 2026-11-22). Thalam gets its own
-   group so the budgets see Thalam alone.
-3. **Budget `thalam-total`:** Cost Management → Budgets → Add, scope `rg-thalam`, monthly. Enter
-   the amount in your **billing currency**, the one shown on your invoice. For an India billing
-   account that is INR: **₹1,500** ([ADR-0013](../adr/0013-cost-ceiling-1500-inr.md)). Elsewhere,
-   convert ₹1,500 at the day's rate. Actual-cost alerts at **70 %, 85 % and 95 %** (₹1,050 /
-   ₹1,275 / ₹1,425), to your email.
-4. **Foundry resource and project:** ai.azure.com → Create project. Under the advanced options,
-   choose `rg-thalam` and the same region. This creates a Foundry resource (kind AIServices) and a
-   project in it.
-   - Name the resource `<your-resource>`. Its name becomes its address,
-     `https://<your-resource>.services.ai.azure.com`, so it goes in `.env` only.
-   - If asked about agents, choose the **basic** setup, never standard. Standard provisions
-     Cosmos DB, AI Search and Storage, all billed by the hour.
+2. **Register the resource providers** Thalam uses (free, once per subscription). The Terraform
+   provider no longer does this itself:
 
-   An idle resource with no deployment costs nothing.
-5. **Budget `thalam-model`:** monthly, **₹1,000** (ADR-0013's model budget), scope `rg-thalam`
-   with a filter on the Foundry resource. Alerts at 50 %, 80 % and 100 %.
-6. **Deploy Claude:** in the project → Model catalog → the current **Claude Haiku** → Deploy →
-   **Global Standard**.
-   - Accept the Azure Marketplace offer when asked. Claude is billed in Claude Consumption Units
-     at Anthropic's prices.
-   - If the offer is refused because of the billing country, stop here: ADR-0012's fallback (an
-     OpenAI model on the same resource) needs a new R13 amendment first.
-   - If the deployment offers a rate limit (tokens per minute), set the lowest value offered.
-7. **Key:** project overview → endpoint and keys → copy Key 1. Do not run
-   `az cognitiveservices account keys list`: it prints both keys to the terminal, and Claude Code
-   is denied it.
-8. **In `.env`:**
-   - `ANTHROPIC_FOUNDRY_RESOURCE=<your-resource>`: the name only, not the address. The check
-     builds the address itself.
-   - `ANTHROPIC_FOUNDRY_API_KEY`: Key 1.
-   - `LLM_HOSTED_MODEL=<deployment-name>`: the deployment's name, as shown on its page.
+   ```bash
+   for ns in Microsoft.CognitiveServices Microsoft.Automation Microsoft.Insights \
+             Microsoft.Consumption Microsoft.PolicyInsights; do
+     az provider register --namespace "$ns"
+   done
+   az provider list --query "[?registrationState=='Registered'].namespace" -o tsv
+   ```
+3. **`.env`:**
+   - `ANTHROPIC_FOUNDRY_RESOURCE=<your-resource>`: choose a globally unique name. It becomes the
+     address `https://<your-resource>.services.ai.azure.com`, so it lives in `.env` only.
+   - `LLM_HOSTED_MODEL=<deployment-name>`: the name the deployment will get.
+   - `THALAM_ALERT_EMAIL=<you@example.com>`: where the alerts and the brake's notice go.
+4. **Plan:** `make guardrails-plan`. Nothing changes yet. Read the plan: about 20 resources to
+   add, 0 to change, 0 to destroy:
+   - the resource group;
+   - three policy definitions, the initiative and its assignment;
+   - the Foundry account and project;
+   - both budgets;
+   - the Automation account, its Python runtime, the runbook, the webhook, the schedule and its
+     link;
+   - the brake role and its assignment;
+   - the action group.
 
-The check (section 8) sends one request, a **token count**, which generates no text.
+   The Foundry name and the e-mail show as `(sensitive value)`.
+5. **Apply (creates Azure resources):** `make guardrails-apply`. It applies the saved plan only.
+   - The policy assignment comes before the Foundry account.
+   - Budgets are in the billing currency, INR for an India billing account: `thalam-total`
+     **₹1,500** (alerts at 70 / 85 / 95 %) and `thalam-model` **₹1,000** on the Foundry account
+     (alerts at 50 / 80 / 100 %). Elsewhere, change `currency` and the amounts in
+     `infra/modules/azure-guardrails/guardrails.json`, and the documents the numbers test reads,
+     in one commit.
+6. **R15, the fence holds.** A new assignment can take up to 30 minutes to take effect. Then try a
+   deployment over the cap; it must be refused:
 
-**A day after the first run**, open Cost analysis for `rg-thalam`:
-- Confirm that count_tokens added no Claude charge. If it did, SPEC-001's "no model generates
-  text" note is amended.
-- Confirm that Claude charges (once there are any) appear under the resource group. If they
-  don't, re-scope `thalam-model` to the subscription with a filter on the Anthropic offer, and
-  say so in the evidence.
+   ```bash
+   az cognitiveservices account deployment create --resource-group rg-thalam \
+     --name <your-resource> --deployment-name probe --model-name claude-haiku-5-5 \
+     --model-version 2 --model-format Anthropic --sku-name GlobalStandard --sku-capacity 4
+   ```
 
-**Evidence:** _not run yet_. Record:
-- the region and the deployed model;
-- both budgets: amount, thresholds, scope type and whether the alert email is set;
-- whether a rate limit was set;
-- the next-day cost check;
-- the date.
+   Expected: `RequestDisallowedByPolicy`, naming the `deployments` rule. If it is created, stop:
+   run `make foundry-down` and find out why before going on.
+7. **R16, the brake runs.**
+   - **Dry run:** Automation account `thalam-brake` → Runbooks → `thalam-brake` → Start, with the
+     argument `--dry-run`. The job output says `nothing to delete: the deployment is parked`. That
+     proves the identity, its token and its read access.
+   - **Through the real path:** run `make foundry-up` (step 8), then Monitor → Alerts → Action
+     groups → `thalam-brake` → Test, sample type **Budget**. The e-mail arrives, the runbook's job
+     says `deleted`, and `make foundry-status` says `parked`. The budget's own crossing is not
+     forced; its first real crossing is that link's proof, as in Kaval's ADR-0064.
+8. **R14, unpark:** `make foundry-up`. It prints every guardrail, then
+   `UP claude-haiku-5-5, GlobalStandard, capacity 1`.
+   - **A Marketplace error on the first deployment:** deploy once from the portal instead (the
+     project → Model catalog → Claude Haiku 5.5 → Deploy → Global Standard, capacity 1, the same
+     deployment name). That accepts the Anthropic offer. Then `make foundry-down` and
+     `make foundry-up` again.
+   - **The offer refused because of the billing country:** stop. ADR-0012's fallback needs a new
+     R13 amendment first.
+9. **Key:** the Foundry resource → Keys and Endpoint → copy Key 1 into `.env` as
+   `ANTHROPIC_FOUNDRY_API_KEY`. Do not run `az cognitiveservices account keys list`: it prints both
+   keys to the terminal, and Claude Code is denied it.
+10. **R13:** `make sandboxes` (section 8): seven `PASS` lines.
+11. **R20, the budgets see Claude.** Send one tiny paid call: the deployment's playground in the
+    Foundry portal, the message `ping`. That is a few tokens, well under ₹0.01.
+12. **R17, park and sweep:** `make foundry-down`, then `make azure-sweep`, which must end `CLEAN`.
+    Run the sweep at the end of every session from now on.
+13. **Within 72 hours:** Cost analysis on `rg-thalam`, grouped by resource.
+    - The Claude meter from step 11 must show under the Foundry account. If it doesn't, both
+      budgets are blind to the model: re-scope them to the subscription, with a filter, by a SPEC
+      amendment.
+    - Check that the token counts added no Claude charge. If they did, SPEC-001's note on them is
+      amended.
 
-Never record names, IDs or the key.
+**Evidence SPEC-001-R15 (fence):** _not run yet_ (the refusal's error code and the date).
+
+**Evidence SPEC-001-R16 (brake):** _not run yet_ (the dry-run output, the action-group test, the job's
+`deleted` line, `foundry-status` afterwards).
+
+**Evidence SPEC-001-R14 (park):** _not run yet_ (the `foundry-up` lines and the date).
+
+**Evidence SPEC-001-R17 (sweep):** _not run yet_ (the `CLEAN` line after `foundry-down`).
+
+**Evidence SPEC-001-R20 (meter):** _not run yet_ (where the Claude charge showed, and how long it took).
+
+**Evidence R13:** in section 8. Never record names, IDs or the key.
 
 ## 6. Repository and ruleset — SPEC-001-R1, SPEC-001-R2
 
@@ -253,8 +293,9 @@ can be pasted here. What a failure usually means:
 - R13 `must be the resource name only`: `.env` holds an address or a URL; keep only
   `<your-resource>`.
 - R13 `HTTP 401` or `HTTP 403`: a wrong key, or another resource's key.
-- R13 `HTTP 404`: a wrong resource name or deployment name. Use the deployment's name, not the
-  model's.
+- R13 `HTTP 404`: a wrong resource name or deployment name, or the deployment is parked
+  (`make foundry-up`). Use the deployment's name, not the model's.
+- R13 `HTTP 429`: capacity 1 allows one request a minute. Wait a minute and run it again.
 - Any `HTTP 3xx`: the service redirected (a sleeping instance, a wrong address); redirects are
   never followed, so credentials never leave the configured host.
 
@@ -269,6 +310,7 @@ can be pasted here. What a failure usually means:
 | ServiceNow instance | developer.servicenow.com | reclaimed after 10 days without a sign-in to it (once 90+ days old) | sign in weekly |
 | Slack bot token | api.slack.com/apps | does not expire; revoke by uninstalling | |
 | Foundry key (Key 1) | the Foundry resource, endpoint and keys | no expiry | switch `.env` to Key 2, then regenerate Key 1 |
+| Brake webhook | Automation account `thalam-brake` | one year after `make guardrails-apply` | two weeks before: delete the webhook in the portal, then `make guardrails-plan` and `make guardrails-apply` recreate it |
 
 ## If a sandbox is down or reclaimed
 

@@ -81,9 +81,10 @@ Phase 2):
      whole path runs every day, not only on the day it is needed (Kaval's lesson: a brake never seen
      running had a broken step).
 
-   The runbook's managed identity has one custom role, on that one Foundry resource: read the account,
-   read and delete its deployments. It cannot create anything, read keys, or touch any other
-   resource. The runbook uses the Python standard library only, takes a dry-run switch, treats "already
+   The runbook's managed identity has one custom role: read the account, and read and delete its
+   deployments. Azure can make a custom role assignable at a resource group but not at one
+   resource, so the role is defined on Thalam's group and **assigned on the Foundry resource only**.
+   The identity cannot create anything, read keys, or touch any other resource. The runbook uses the Python standard library only, takes a dry-run switch, treats "already
    gone" as success, tries every deletion even if one fails, and fails the job at the end if any did.
 5. **`make azure-sweep`**, read-only, the exit gate after every session (Kaval's `lab-sweep`). It fails
    if:
@@ -103,9 +104,15 @@ assignment, creating a policy exemption, deleting a budget or the action group, 
 **How it is built:** Terraform (`azurerm`, Kaval's layout: `infra/modules/azure-guardrails/`, root in
 `infra/envs/azure/`) holds the resource group, both budgets, the policy, the Foundry resource and
 project, the Automation account, the runbook and its schedule, the role and the action group. State
-stays on the laptop and is gitignored, with the alert e-mail and the Foundry name in a gitignored
-`terraform.tfvars`. Rule 6 holds: no subscription ID or resource address in git. Every resource is
-tagged `project=thalam`.
+stays on the laptop and is gitignored.
+
+Three values reach Terraform as environment variables only, through `scripts/ops/tf.py`:
+- the subscription, from `az account show`;
+- the Foundry name and the alert e-mail, read from `.env` as data, never run as shell.
+
+Both names are marked sensitive, so a plan hides them. Rule 6 holds: no subscription ID or resource
+address in git. Every number lives once, in `infra/modules/azure-guardrails/guardrails.json`. Every
+resource is tagged `project=thalam`.
 
 **One live proof the budgets need:** after the first real deployment, Lab 00 makes one paid call of a
 few tokens (well under ₹0.01). Within 72 hours its meter must show under Thalam's resource group in

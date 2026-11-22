@@ -2310,3 +2310,19 @@ key did not exist yet ([ADR-0012](../../adr/0012-microsoft-foundry-and-azure.md)
 - **Docs:** CLAUDE.md rules 1 and 2, ROADMAP Phases 0, 2, 7 and 8, the new `docs/cost/README.md`,
   and FS-5 (Work IQ and Teams).
 - **Jira:** THL-8 was renamed "Kubernetes and Azure", and THL-20 and THL-21 were rewritten.
+
+## As built (2026-11-22, the cost guardrails, THL-24)
+
+Task 10G followed the steps above, with these differences:
+- **No `terraform.tfvars.example`:** the Foundry name and the alert e-mail come from `.env`. The new
+  `scripts/ops/tf.py` passes them, and the subscription, to Terraform as environment variables.
+  The Makefile does not `source .env`, because that would run every value as shell.
+- **G7 is `feat:`:** the commit hook allows feat, fix, docs, infra and chore only.
+- **The brake's names** (Automation account, runbook, action group, schedule) also live in
+  `guardrails.json`.
+- **The brake's role** is defined on the resource group and assigned on the Foundry account only:
+  Azure has no resource-level assignable scope.
+- **`.claude/settings.json`** (R19) is applied by Roshan, not by Claude. The auto-mode check
+  rightly refused the agent editing its own permissions. Until then, the eight deny cases in
+  `test_budget_wiring.py` fail.
+- **Tests:** 146 → 257 collected.

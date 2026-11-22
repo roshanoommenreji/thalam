@@ -35,9 +35,15 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
 - [ ] Jira project + epics mirroring this roadmap
 - [ ] Azure budgets **before** the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on
-      the model (ADR-0013; Azure has no hard cap, so the router's cap is the brake from Phase 2)
+      the model (ADR-0013)
+- [ ] Azure cost guardrails **before** the model deployment
+      ([ADR-0014](docs/adr/0014-azure-cost-guardrails.md), THL-24; the brake moved here from
+      Phase 2): parked by default (`make foundry-up` / `foundry-down`), capacity 1, Azure Policy
+      (Haiku, Global Standard, a cap of 3, one region), the brake at ₹1,425 / ₹1,000 and nightly,
+      `make azure-sweep`, and a test that the numbers agree
 
-**Exit gate:** sandboxes reachable with read-only tokens; CI green on an empty package.
+**Exit gate:** sandboxes reachable with read-only tokens; CI green on an empty package; the model
+deployment parked and `make azure-sweep` clean.
 
 ## Phase 1 — The release graph, local · `[ ]`
 
@@ -59,8 +65,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 - [ ] Guardrails v1 ([ADR-0005](docs/adr/0005-layered-guardrails.md)): identity, input screen,
       untrusted-text handling, output schema and escaping
 - [ ] Model router ([ADR-0006](docs/adr/0006-model-provider-and-routing.md)): Ollama locally, Claude
-      on Microsoft Foundry hosted, model IDs priced on the day, Haiku first, the $10 (about ₹950) monthly cap in code, and an
-      automated brake that removes the deployment at the ₹1,425 alert (ADR-0013)
+      on Microsoft Foundry hosted, model IDs priced on the day, Haiku first, the $10 (about ₹950) monthly cap in code.
+      The automated brake already exists from Phase 0 (ADR-0014); raising capacity above the
+      cap of 3 redoes ADR-0014's arithmetic first
 - [ ] Foundry IQ knowledge base (Free or Serverless tier only) for release policies, runbooks, CAB
       rules and freeze calendars; Postgres stays the record for the release graph (ADR-0012)
 - [ ] Tracing to Langfuse; token cost per conversation recorded
