@@ -1,0 +1,58 @@
+{
+  "_about": "The one place Thalam's Azure cost numbers live (ADR-0013, ADR-0014). Terraform and scripts/ops read this file; scripts/dev/test_budget_wiring.py (SPEC-001-R18) checks that the documents quote it and that no code repeats it.",
+  "currency": "INR",
+  "ceiling": 1500,
+  "plan": 750,
+  "region": "eastus2",
+  "resource_group": "rg-thalam",
+  "tags": {"project": "thalam"},
+  "budgets": {
+    "thalam-total": {"scope": "resource-group", "amount": 1500, "alerts": [70, 85, 95], "brake_at": 95},
+    "thalam-model": {"scope": "foundry-account", "amount": 1000, "alerts": [50, 80, 100], "brake_at": 100}
+  },
+  "model": {
+    "name": "claude-haiku-5-5",
+    "version": "2",
+    "format": "Anthropic",
+    "sku": "GlobalStandard",
+    "capacity": 1,
+    "capacity_cap": 3
+  },
+  "runaway": {
+    "tokens_per_minute_per_unit": 1000,
+    "usd_per_million_input": 0.10,
+    "usd_per_million_output": 0.50,
+    "inr_per_usd": 95,
+    "lag_days": 3
+  },
+  "brake": {"nightly_at": "02:00", "timezone": "Asia/Kolkata", "webhook_valid_days": 365},
+  "policy": {
+    "assignment": "thalam-guardrails",
+    "allowed_locations": ["eastus2", "global"],
+    "allowed_account_kinds": ["AIServices"],
+    "allowed_search_skus": ["free"],
+    "not_allowed_types": [
+      "Microsoft.Compute/virtualMachines",
+      "Microsoft.Compute/virtualMachineScaleSets",
+      "Microsoft.ContainerService/managedClusters",
+      "Microsoft.Network/natGateways",
+      "Microsoft.Network/applicationGateways",
+      "Microsoft.Network/frontDoors",
+      "Microsoft.Cdn/profiles",
+      "Microsoft.DBforPostgreSQL/flexibleServers",
+      "Microsoft.DBforPostgreSQL/servers",
+      "Microsoft.Sql/servers",
+      "Microsoft.Sql/managedInstances"
+    ]
+  },
+  "sweep": {
+    "allowed_types": [
+      "Microsoft.CognitiveServices/accounts",
+      "Microsoft.CognitiveServices/accounts/projects",
+      "Microsoft.Automation/automationAccounts",
+      "Microsoft.Automation/automationAccounts/runbooks",
+      "Microsoft.Automation/automationAccounts/runtimeEnvironments",
+      "microsoft.insights/actionGroups"
+    ]
+  }
+}

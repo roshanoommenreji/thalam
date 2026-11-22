@@ -1,0 +1,35 @@
+{
+  "displayName": "Thalam: model deployments use the approved model, type and capacity",
+  "description": "Refuses a model deployment that is not an allowed model, not an allowed deployment type, has no capacity set (Azure would apply its default of 10 units) or is above the capacity cap (ADR-0014, SPEC-001-R15).",
+  "mode": "All",
+  "parameters": {
+    "allowedModels": {
+      "type": "Array",
+      "metadata": {"displayName": "Allowed models", "description": "Model names a deployment may use."}
+    },
+    "allowedSkus": {
+      "type": "Array",
+      "metadata": {"displayName": "Allowed deployment types", "description": "Deployment SKU names, such as GlobalStandard."}
+    },
+    "maxCapacity": {
+      "type": "Integer",
+      "metadata": {"displayName": "Capacity cap", "description": "The most capacity units a deployment may have."}
+    }
+  },
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {"field": "type", "equals": "Microsoft.CognitiveServices/accounts/deployments"},
+        {
+          "anyOf": [
+            {"field": "Microsoft.CognitiveServices/accounts/deployments/model.name", "notIn": "[parameters('allowedModels')]"},
+            {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.name", "notIn": "[parameters('allowedSkus')]"},
+            {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.capacity", "exists": "false"},
+            {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.capacity", "greater": "[parameters('maxCapacity')]"}
+          ]
+        }
+      ]
+    },
+    "then": {"effect": "deny"}
+  }
+}
