@@ -32,6 +32,9 @@ runs; a hosted model for chat and long-form writing. Provider order: the Anthrop
 first (Kaval's account cannot subscribe to Bedrock's Marketplace models), Bedrock when that
 restriction lifts. The exact model IDs and prices are checked on the day the router is built
 (Phase 2), not recalled.
+*Superseded in part 2026-11-22 by [ADR-0012](0012-microsoft-foundry-and-azure.md): the hosted
+model is Claude on Microsoft Foundry, not the Anthropic API directly or Bedrock. The router and
+everything else here stand.*
 
 ## Consequences
 

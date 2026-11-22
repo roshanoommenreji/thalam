@@ -23,6 +23,9 @@ argued in writing (Kaval ADR-0008, 0028).
 
 The ceiling covers AWS **and** model tokens **and** any SaaS tier. The hosted-model share starts
 at a cap of **$20 / month**, enforced in code by the router.
+*Superseded in part 2026-11-22 by [ADR-0012](0012-microsoft-foundry-and-azure.md): read "Azure"
+for "AWS" here and below. Azure budgets carry the alarms from Phase 0, and Kaval's list is kept in
+Azure terms in CLAUDE.md rule 1.*
 
 Carried over from Kaval unchanged: no NAT gateway, no ALB, no persistent EKS, no RDS, no GPU;
 staging on demand; production parks itself when idle; every resource priced on the day it is

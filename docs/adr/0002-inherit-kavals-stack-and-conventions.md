@@ -25,7 +25,7 @@ Copy unchanged from Kaval:
 | Safety architecture | read-only `agent`, scoped `executor`, OPA `auto`/`ask`/`never`, Slack approval with expiry |
 | Untrusted text | flatten, cap, label as data; escape model text before display |
 | Evals | golden set + injection set as CI gates |
-| Platform | k3s on Graviton (`linux/arm64`), Helm umbrella chart, Flux, Terraform |
+| Platform | k3s on Graviton (`linux/arm64`), Helm umbrella chart, Flux, Terraform. *Superseded in part 2026-11-22 by [ADR-0012](0012-microsoft-foundry-and-azure.md): the cloud is Azure; `linux/arm64`, Helm, Flux and Terraform stay.* |
 | Environments | `local` → `staging` (on demand) → `prod`, promotion by signed digest |
 | Supply chain | SBOM, keyless signing, admission check |
 | Process | ADRs, labs, journal, Jira-linked conventional commits, Definition of Done |

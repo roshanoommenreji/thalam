@@ -5,6 +5,7 @@
 - **Approved by / date:** Roshan, 2026-11-18
 - **Amended in planning:** 2026-11-18. R5's key rule applies on story branches; the R8 fixtures are built by the test in a temporary directory (approved with the plan)
 - **Amended after the pre-publication review:** 2026-11-18, approved by Roshan. R8 also fails a Built or Amended spec whose live lab still says `_not run yet_`: naming a requirement was enough for a lab to count as proof, so Built could pass with blank evidence
+- **Amended for the platform switch:** 2026-11-22, approved by Roshan. The hosted model moves to Claude on Microsoft Foundry ([ADR-0012](../adr/0012-microsoft-foundry-and-azure.md)); R13, open question 3, Out of scope, Numbers, Done when and the Phase 0 model note change
 
 > One page. `CLAUDE.md` wins over anything written here. Drafted through `superpowers:brainstorming`
 > on 2026-11-18 ([ADR-0010](../adr/0010-ai-dlc-spec-driven-workflow.md)).
@@ -17,18 +18,24 @@ this, Phase 1 can start writing code without revisiting any of it.
 
 ## Out of scope
 
-- **AWS of any kind.** No AWS spend before Phase 7, so the budget alarms and hard stop move to the
-  start of Phase 7, when the account question (Kaval's or a new one) is decided.
+- **Azure beyond Thalam's resource group, one Foundry resource and project, one model deployment
+  and the two budgets** (ADR-0012). Hosting, and the brake that stops it, come in Phase 7. No AWS
+  at all.
 - Docker, compose, Postgres, Ollama, Langfuse (Phase 1).
 - Write credentials and executor bot accounts (Phase 3). Phase 0 creates read-only access only.
 - Renaming the local folder: it stays `Release Agent`; the repository is `thalam`.
 
 ## Numbers
 
-Cost **$0**: GitHub Free (public repo), two Jira Free sites, a ServiceNow Personal Developer Instance,
-Slack Free, an Anthropic key with a console spend limit of **≤ $20 / month** (ADR-0008's model cap;
-Phase 0 spends nothing on it). Data: fixture data only; no real company data, URLs or tenant IDs in
-any committed file (CLAUDE.md rule 6).
+Cost **about $0**:
+- GitHub Free (public repo), two Jira Free sites, a ServiceNow Personal Developer Instance, Slack Free.
+- A Claude deployment on Microsoft Foundry, on a card-backed pay-as-you-go Azure subscription.
+- Two Azure budgets: **$100 / month** with alerts at 70 / 85 / 95 %, and **$20 / month** on the
+  model (ADR-0008's model cap).
+- Phase 0's only model call is a token count.
+
+Data: fixture data only; no real company data, URLs, tenant IDs or resource names in any committed
+file (CLAUDE.md rule 6).
 
 ## Open questions (the AI asks, Roshan answers)
 
@@ -36,7 +43,7 @@ any committed file (CLAUDE.md rule 6).
 |---|---|---|---|
 | 1 | Branch protection and free CodeQL need a public repo on GitHub Free. Public now, private, or Pro? | Public from day one, like Kaval. Phase 8 "repo public" becomes a final access review | 2026-11-18 |
 | 2 | Jira Free cannot restrict project access. Where do planning and the sandbox live? | Two sites: THL planning on the existing site (no bots); a new sandbox site holding fixture data and the bots | 2026-11-18 |
-| 3 | Thalam spends nothing on AWS before Phase 7. What guards cost in Phase 0? | The Anthropic console limit only; AWS budget item moves to the start of Phase 7 | 2026-11-18 |
+| 3 | Thalam spends nothing on AWS before Phase 7. What guards cost in Phase 0? | The Anthropic console limit only; AWS budget item moves to the start of Phase 7. *Amended 2026-11-22 (ADR-0012): two Azure budgets, $100 (alerts 70 / 85 / 95 %) and $20 on the model, created before the deployment; the hosting brake comes with hosting in Phase 7* | 2026-11-18 |
 | 4 | How do requirements link to their proof? | `covers: SPEC-NNN-Rn` text tags in any file, checked by pytest; live proofs name a lab doc | 2026-11-18 |
 
 ## Requirements
@@ -55,7 +62,7 @@ any committed file (CLAUDE.md rule 6).
 | SPEC-001-R10 | The sandbox Jira site's read token (scoped to read, or an OAuth app with read scopes if scoped tokens are unavailable) can read the site, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R11 | The ServiceNow read user (`snc_read_only`) can read `change_request`, and a write with it is refused | `scripts/dev/check_sandboxes.py` |
 | SPEC-001-R12 | The Slack app's token passes `auth.test` and the app is a member of `#thalam` only | `scripts/dev/check_sandboxes.py` |
-| SPEC-001-R13 | The Anthropic key lists models (a free call) and its console spend limit is ≤ $20 / month | `scripts/dev/check_sandboxes.py`, live: `docs/labs/00-foundations.md` |
+| SPEC-001-R13 | The Claude deployment on Microsoft Foundry answers a token-count call with the key in `.env`, and Azure budgets exist before it: $100 / month on Thalam's resource group (alerts 70 / 85 / 95 %) and $20 / month on the model | `scripts/dev/check_sandboxes.py`, live: `docs/labs/00-foundations.md` |
 
 **How the check works (R8).** `scripts/dev/spec_coverage.py` reads `docs/specs/SPEC-*.md` (not the
 template): the Status line and every `| SPEC-NNN-Rn |` row. It looks for `covers: SPEC-…` tags in
@@ -82,14 +89,17 @@ health check. Its negative cases (refused writes) run against the sandboxes only
   commit; ADR-0010's stop rule covers it becoming a burden.
 - **A sandbox down or reclaimed** (PDIs sleep when idle and can be reclaimed; exact rules verified on
   the day): that line fails, the rest run; the lab says how to wake or re-request it.
-- Non-negotiables touched: secrets (rule 6) and the read-only agent (rule 3). No model runs in Phase 0.
+- Non-negotiables touched: secrets (rule 6) and the read-only agent (rule 3). No model generates
+  text in Phase 0: R13 only counts tokens. That call is free on Anthropic's API; on Foundry it is
+  confirmed free on the first run (Lab 00 §5), or this line is amended.
 
 ## Done when
 
 ROADMAP Phase 0 exit gate: sandboxes reachable with read-only tokens; CI green on an empty package.
 Concretely: R3–R8 green in CI on `main`, and one run of `check_sandboxes.py` passing R10–R13, recorded
-in the lab. Docs follow: an ADR for the public repo, the two Jira sites and the AWS move; ROADMAP
-(AWS line to Phase 7, Phase 8 wording); journal; `vault/projects/thalam.md`; this spec set to Built.
+in the lab. Docs follow: ADR-0011 (public repo, two Jira sites) and ADR-0012 (Microsoft Foundry and
+Azure); ROADMAP (Azure budgets in Phase 0, Phase 7 on Azure, Phase 8 wording); journal;
+`vault/projects/thalam.md`; this spec set to Built.
 
 ## Measured (filled in at the end)
 
