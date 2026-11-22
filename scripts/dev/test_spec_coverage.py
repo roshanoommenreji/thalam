@@ -65,6 +65,16 @@ def test_a_built_spec_whose_requirements_are_cited_passes(tmp_path: Path) -> Non
     assert _problems(root) == []
 
 
+def test_a_tag_under_infra_counts(tmp_path: Path) -> None:
+    # The Terraform module's tests live beside it (SPEC-001-R15, R16), so infra/ is scanned too.
+    proof = "`infra/modules/m/tests/test_m.py`"
+    root = _tree(tmp_path, {
+        "docs/specs/SPEC-900-x.md": _spec("900", "Built", [("SPEC-900-R1", proof)]),
+        "infra/modules/m/tests/test_m.py": _tag("SPEC-900-R1"),
+    })
+    assert _problems(root) == []
+
+
 def test_a_built_spec_with_an_uncited_requirement_fails(tmp_path: Path) -> None:
     root = _tree(tmp_path, {
         "docs/specs/SPEC-900-x.md": _spec("900", "Built", [("SPEC-900-R1", PROOF)]),

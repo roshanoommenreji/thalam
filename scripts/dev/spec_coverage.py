@@ -13,7 +13,7 @@ the proof: repository paths in backticks, where `path::test_name` also names a t
 A file cites a requirement with a tag on a comment line of its own: a comment marker (#, //,
 --, ;, * or <!--), the word "covers" in lower case, a colon, then one or more IDs separated by
 commas or spaces. (The tag is not written out here, so this file cites nothing.) The scan reads
-services/, scripts/, .github/, policy/ and evals/, skipping VCS, virtualenv, cache and build
+services/, scripts/, .github/, policy/, evals/ and infra/, skipping VCS, virtualenv, cache and build
 folders.
 
 Fails closed, for every spec:
@@ -64,7 +64,7 @@ TAG = re.compile(
 )
 BACKTICKED = re.compile(r"`([^`\s]+)`")
 LIVE = re.compile(r"live:[ \t]*(`[^`\s]+`(?:[ \t]*,[ \t]*`[^`\s]+`)*)")
-SCANNED = ("services", "scripts", ".github", "policy", "evals")
+SCANNED = ("services", "scripts", ".github", "policy", "evals", "infra")
 NOT_SCANNED = {
     ".git", ".venv", "__pycache__", "node_modules", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "build", "dist", ".tox",
