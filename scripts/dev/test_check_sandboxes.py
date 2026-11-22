@@ -55,7 +55,7 @@ READ_ONLY: dict[tuple[str, str], Answer] = {
     ("POST", "slack.com/api/auth.test"): (200, {"ok": True}),
     ("GET", "slack.com/api/users.conversations"): (
         200,
-        {"ok": True, "channels": [{"name": "thalam"}]},
+        {"ok": True, "channels": [{"name": "thalam-releases"}]},
     ),
     FOUNDRY_ROUTE: (200, {"input_tokens": 8}),
 }
@@ -120,12 +120,12 @@ def test_servicenow_address_must_be_https() -> None:
 
 
 def test_a_slack_app_in_other_channels_fails() -> None:
-    channels = {"ok": True, "channels": [{"name": "thalam"}, {"name": "general"}]}
+    channels = {"ok": True, "channels": [{"name": "thalam-releases"}, {"name": "general"}]}
     route = ("GET", "slack.com/api/users.conversations")
     results = run_all(ENV, FakeHttp({route: (200, channels)}))
-    member = _one(results, "slack", "#thalam only")
+    member = _one(results, "slack", "#thalam-releases only")
     assert not member.ok
-    assert member.detail == "channels: general, thalam"
+    assert member.detail == "channels: general, thalam-releases"
 
 
 def test_a_missing_or_placeholder_setting_fails_its_group_without_calling_it() -> None:

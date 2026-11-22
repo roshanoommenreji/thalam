@@ -71,11 +71,20 @@ is the control.
 
 ## 4. Slack app — SPEC-001-R12
 
-1. api.slack.com/apps → Create New App → From scratch → name **Thalam** → your workspace. (Slack's free plan allows 10 apps in total.)
-2. OAuth & Permissions → Bot Token Scopes: `channels:read` and `groups:read` only (so it can list
-   its own channels; without them the check fails with `missing_scope`). Posting comes in Phase 3.
-3. Install to Workspace, then copy the Bot User OAuth Token to `.env` as `SLACK_BOT_TOKEN`.
-4. Create `#thalam` and run `/invite @Thalam` in it. Invite it nowhere else.
+Use a workspace of its own: a new free one named **Thalam** (Create Another Workspace → skip
+inviting → Continue with Free), so the bot never sits beside another project's channels.
+
+1. api.slack.com/apps → **Create an App** → under *From scratch*, **Pick features** → name
+   **Thalam** → your workspace. (Slack's free plan allows 10 apps in total. In November 2026 the
+   dialog also offers templates and pasting a manifest; *Pick features* is the old *From scratch*.)
+2. Bot scopes: `channels:read` and `groups:read` only (so it can list its own channels; without
+   them the check fails with `missing_scope`). No events. Posting comes in Phase 3.
+3. Before installing, App Home → App Display Name → Edit: set **Default username** to
+   `thalam_bot`. Slack refuses a channel named like a user and never renames a bot user once it
+   exists, so a bot left as `thalam` blocks a channel of that name (it happened on 2026-11-22;
+   SPEC-001-R12 was amended to the channel below).
+4. Create and Install → Allow, then copy the Bot User OAuth Token to `.env` as `SLACK_BOT_TOKEN`.
+5. Create `#thalam-releases` (public) and run `/invite @Thalam` in it. Invite it nowhere else.
 
 ## 5. Microsoft Foundry: a Claude deployment behind two budgets — SPEC-001-R13
 

@@ -182,6 +182,11 @@ def _slack_error(payload: object) -> str:
     return ""
 
 
+# The one channel the app may be in (SPEC-001-R12). Not "thalam": Slack refuses a channel named
+# like a user, and the bot user's name is "thalam".
+SLACK_CHANNEL = "thalam-releases"
+
+
 def check_slack(env: Mapping[str, str], http: Http) -> list[Result]:
     headers = {"Authorization": f"Bearer {env['SLACK_BOT_TOKEN']}"}
     status, payload = http("POST", "https://slack.com/api/auth.test", headers, b"")
@@ -194,12 +199,13 @@ def check_slack(env: Mapping[str, str], http: Http) -> list[Result]:
         "?types=public_channel,private_channel&exclude_archived=true&limit=200"
     )
     status, payload = http("GET", url, headers, None)
-    name = "R12 slack: the app is in #thalam only"
+    name = f"R12 slack: the app is in #{SLACK_CHANNEL} only"
     channels = payload.get("channels") if isinstance(payload, dict) and payload.get("ok") else None
     if not isinstance(channels, list):
         return [auth, Result(name, False, f"HTTP {status}" + _slack_error(payload))]
     names = sorted(str(c.get("name", "?")) for c in channels if isinstance(c, dict))
-    return [auth, Result(name, names == ["thalam"], "channels: " + (", ".join(names) or "none"))]
+    only_ours = names == [SLACK_CHANNEL]
+    return [auth, Result(name, only_ours, "channels: " + (", ".join(names) or "none"))]
 
 
 # An Azure resource name: 2 to 64 lowercase letters, digits and hyphens, no hyphen at either end.
