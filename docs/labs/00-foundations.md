@@ -157,7 +157,8 @@ moved, follow the step's intent and note the new label here.
      capital letters) and `CLAUDE_INDUSTRY` (lower case, such as `technology`). Every Claude
      deployment must carry them (`modelProviderData`). Azure uses them to **accept Anthropic's
      Commercial Terms on your behalf** through the Marketplace. So read those terms first, and
-     enter your real organization, country and industry. They stay in `.env`, never in git.
+     enter your real organization, country and industry. For a personal project the organization
+     is you: your own legal name (accepted on 2026-11-22). They stay in `.env`, never in git.
 4. **Plan:** `make guardrails-plan`. Nothing changes yet. Read the plan: about 20 resources to
    add, 0 to change, 0 to destroy:
    - the resource group;
@@ -193,9 +194,12 @@ moved, follow the step's intent and note the new label here.
      argument `--dry-run`. The job output says `nothing to delete: the deployment is parked`. That
      proves the identity, its token and its read access.
    - **Through the real path:** run `make foundry-up` (step 8), then Monitor → Alerts → Action
-     groups → `thalam-brake` → Test, sample type **Budget**. The e-mail arrives, the runbook's job
-     says `deleted`, and `make foundry-status` says `parked`. The budget's own crossing is not
-     forced; its first real crossing is that link's proof, as in Kaval's ADR-0064.
+     groups → `thalam-brake` → Test, sample type **Budget**. (The API call behind that button is
+     the action group's `createNotifications`, alert type `actualcostbudget`.) The e-mail arrives,
+     and the runbook's job says `OK deleted`. That means Azure accepted the delete:
+     `make foundry-status` says `deleting` for about half a minute, then `parked`. Run
+     `make foundry-up` again once it says `parked`; until then it prints `WAIT`. The budget's own
+     crossing is not forced; its first real crossing is that link's proof, as in Kaval's ADR-0064.
 8. **R14, unpark:** `make foundry-up`. It prints every guardrail, then
    `UP claude-haiku-5-5, GlobalStandard, capacity 1`.
    - `foundry-up` sends the deployment through Resource Manager, with the attestation fields from
@@ -210,7 +214,8 @@ moved, follow the step's intent and note the new label here.
    keys to the terminal, and Claude Code is denied it.
 10. **R13:** `make sandboxes` (section 8): seven `PASS` lines.
 11. **R20, the budgets see Claude.** Send one tiny paid call: the deployment's playground in the
-    Foundry portal, the message `ping`. That is a few tokens, well under ₹0.01.
+    Foundry portal with the message `ping`, or a Messages API call to the same deployment with
+    `max_tokens: 1`. That is a few tokens, well under ₹0.01.
 12. **R17, park and sweep:** `make foundry-down`, then `make azure-sweep`, which must end `CLEAN`.
     Run the sweep at the end of every session from now on.
 13. **Within 72 hours:** Cost analysis on `rg-thalam`, grouped by resource.
@@ -220,16 +225,36 @@ moved, follow the step's intent and note the new label here.
     - Check that the token counts added no Claude charge. If they did, SPEC-001's note on them is
       amended.
 
-**Evidence SPEC-001-R15 (fence):** _not run yet_ (the refusal's error code and the date).
+**Evidence SPEC-001-R15 (fence, 2026-11-22):**
+- `make guardrails-apply` added 19 resources.
+- The first capacity-4 probe was refused with `InvalidPolicyEvaluation`, which would have refused
+  every deployment (ADR-0014, "Found by the live proof"). With the fixed rule applied, the same
+  probe was refused with `RequestDisallowedByPolicy` by the `thalam-deployments` rule, quoting
+  ADR-0014's message. Nothing was created.
 
-**Evidence SPEC-001-R16 (brake):** _not run yet_ (the dry-run output, the action-group test, the job's
-`deleted` line, `foundry-status` afterwards).
+**Evidence SPEC-001-R16 (brake, 2026-11-22):**
+- **First run:** started from the portal while nothing was deployed, so without `--dry-run`. The
+  job `Completed` with `OK nothing to delete: the deployment is parked`.
+- **Through the action group, with the deployment up:** a test notification of type
+  `actualcostbudget` was accepted at 14:20:57 UTC. The brake job started at 14:21:00 UTC and ended
+  `Completed`, output `OK deleted <deployment>`. The deployment showed `Deleting` for about 30
+  seconds, then the list was empty.
 
-**Evidence SPEC-001-R14 (park):** _not run yet_ (the `foundry-up` lines and the date).
+**Evidence SPEC-001-R14 (park, 2026-11-22):**
+- **First `make foundry-up`:** all 7 guardrail lines `PASS`, then Azure refused the deployment with
+  `InvalidModelProviderData` (ADR-0014's second finding).
+- **After the fix:** 7 `PASS`, then `UP  claude-haiku-5-5, GlobalStandard, capacity 1`. That
+  happened twice: before the brake test and after it.
 
-**Evidence SPEC-001-R17 (sweep):** _not run yet_ (the `CLEAN` line after `foundry-down`).
+**Evidence SPEC-001-R17 (sweep, 2026-11-22):** `make azure-sweep` gave `CLEAN  10 of 10 checks pass`
+twice: after `guardrails-apply`, and after `make foundry-down` (`PARKED  deleted 1 deployment(s)`,
+then `foundry-status`: `parked  (no deployment)`).
 
-**Evidence SPEC-001-R20 (meter):** _not run yet_ (where the Claude charge showed, and how long it took).
+**Evidence SPEC-001-R20 (meter):** _not run yet_
+- **The call:** sent 2026-11-22 14:34:43 UTC as a Messages API call with `max_tokens: 1`.
+- **The reply:** `HTTP 200`, `stop_reason: max_tokens`, 10 input tokens and 1 output token, about
+  $0.0000015.
+- **Next:** check Cost analysis on `rg-thalam` by 2026-11-25 (step 13).
 
 **Evidence R13:** in section 8. Never record names, IDs or the key.
 
@@ -305,7 +330,17 @@ can be pasted here. What a failure usually means:
 - Any `HTTP 3xx`: the service redirected (a sleeping instance, a wrong address); redirects are
   never followed, so credentials never leave the configured host.
 
-**Evidence:** _not run yet_
+**Evidence (2026-11-22):** the first run with the Foundry deployment up, at capacity 1:
+
+```
+PASS  R10 jira sandbox: read with the read token  (HTTP 200)
+PASS  R10 jira sandbox: a write with the read token is refused  (HTTP 401)
+PASS  R11 servicenow: read change_request with the read user  (HTTP 200)
+PASS  R11 servicenow: a write with the read user is refused  (HTTP 403)
+PASS  R12 slack: the bot token passes auth.test  (HTTP 200)
+PASS  R12 slack: the app is in #thalam-releases only  (channels: thalam-releases)
+PASS  R13 foundry: the Claude deployment answers a token count  (HTTP 200)
+```
 
 ## Credentials and their expiry
 
