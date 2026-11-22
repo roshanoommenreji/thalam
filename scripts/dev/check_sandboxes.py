@@ -10,6 +10,8 @@ The refused-write probes are shaped so that even a credential that CAN write cha
   Jira        POST an issue with no fields: a writer gets 400 (validation), read-only 401 or 403
   ServiceNow  PATCH the first change with its own short description: a writer gets 200 (a no-op
               update), read-only gets 403
+The model check (Claude on Microsoft Foundry, ADR-0012) only counts tokens; it never asks the
+model to write anything.
 Stdlib only.
 """
 # covers: SPEC-001-R10, SPEC-001-R11, SPEC-001-R12, SPEC-001-R13
@@ -200,21 +202,56 @@ def check_slack(env: Mapping[str, str], http: Http) -> list[Result]:
     return [auth, Result(name, names == ["thalam"], "channels: " + (", ".join(names) or "none"))]
 
 
-def check_anthropic(env: Mapping[str, str], http: Http) -> list[Result]:
-    headers = {"x-api-key": env["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01"}
-    status, _ = http("GET", "https://api.anthropic.com/v1/models?limit=1", headers, None)
-    name = "R13 anthropic: the key lists models (a free call)"
-    return [Result(name, status == 200, f"HTTP {status}")]
+# An Azure resource name: 2 to 64 lowercase letters, digits and hyphens, no hyphen at either end.
+RESOURCE_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}[a-z0-9]")
+FOUNDRY_HINTS = {
+    401: " (check ANTHROPIC_FOUNDRY_API_KEY)",
+    403: " (check ANTHROPIC_FOUNDRY_API_KEY)",
+    404: " (check the resource and deployment names)",
+}
+
+
+def check_foundry(env: Mapping[str, str], http: Http) -> list[Result]:
+    """Claude on Microsoft Foundry (ADR-0012): count the tokens of a one-word prompt.
+
+    The address is built here from the resource name, never taken from config, so nothing in .env
+    can point the key at another host. Token counting generates nothing.
+    """
+    name = "R13 foundry: the Claude deployment answers a token count"
+    resource = env["ANTHROPIC_FOUNDRY_RESOURCE"]
+    if not RESOURCE_NAME.fullmatch(resource):
+        detail = (
+            "ANTHROPIC_FOUNDRY_RESOURCE must be the resource name only: "
+            "lowercase letters, digits and hyphens"
+        )
+        return [Result(name, False, detail)]
+    url = f"https://{resource}.services.ai.azure.com/anthropic/v1/messages/count_tokens"
+    headers = {
+        "x-api-key": env["ANTHROPIC_FOUNDRY_API_KEY"],
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+    body = json.dumps(
+        {"model": env["LLM_HOSTED_MODEL"], "messages": [{"role": "user", "content": "ping"}]}
+    ).encode()
+    status, payload = http("POST", url, headers, body)
+    if status != 200:
+        return [Result(name, False, f"HTTP {status}{FOUNDRY_HINTS.get(status, '')}")]
+    count = payload.get("input_tokens") if isinstance(payload, dict) else None
+    if not isinstance(count, int) or isinstance(count, bool):
+        return [Result(name, False, "HTTP 200, but the answer has no input_tokens count")]
+    return [Result(name, True, "HTTP 200")]
 
 
 Check = Callable[[Mapping[str, str], Http], list[Result]]
 JIRA_KEYS = ("JIRA_SANDBOX_CLOUD_ID", "JIRA_SANDBOX_EMAIL", "JIRA_READ_TOKEN")
 SERVICENOW_KEYS = ("SERVICENOW_BASE_URL", "SERVICENOW_READ_USER", "SERVICENOW_READ_PASSWORD")
+FOUNDRY_KEYS = ("ANTHROPIC_FOUNDRY_RESOURCE", "ANTHROPIC_FOUNDRY_API_KEY", "LLM_HOSTED_MODEL")
 GROUPS: tuple[tuple[str, tuple[str, ...], Check], ...] = (
     ("R10 jira sandbox", JIRA_KEYS, check_jira),
     ("R11 servicenow", SERVICENOW_KEYS, check_servicenow),
     ("R12 slack", ("SLACK_BOT_TOKEN",), check_slack),
-    ("R13 anthropic", ("ANTHROPIC_API_KEY",), check_anthropic),
+    ("R13 foundry", FOUNDRY_KEYS, check_foundry),
 )
 KEYS = {key for _, keys, _ in GROUPS for key in keys}
 
