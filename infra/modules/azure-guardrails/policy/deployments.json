@@ -1,6 +1,6 @@
 {
   "displayName": "Thalam: model deployments use the approved model, type and capacity",
-  "description": "Refuses a model deployment that is not an allowed model, not an allowed deployment type, has no capacity set (Azure would apply its default of 10 units) or is above the capacity cap (ADR-0014, SPEC-001-R15).",
+  "description": "Refuses a model deployment that is not an allowed model, not an allowed deployment type, has no capacity set (Azure would apply its default of 10 units) or is above the capacity cap (ADR-0014, SPEC-001-R15). The capacity is converted to a number before the comparison, because a deployment request can carry it as text.",
   "mode": "All",
   "parameters": {
     "allowedModels": {
@@ -25,7 +25,7 @@
             {"field": "Microsoft.CognitiveServices/accounts/deployments/model.name", "notIn": "[parameters('allowedModels')]"},
             {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.name", "notIn": "[parameters('allowedSkus')]"},
             {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.capacity", "exists": "false"},
-            {"field": "Microsoft.CognitiveServices/accounts/deployments/sku.capacity", "greater": "[parameters('maxCapacity')]"}
+            {"value": "[int(string(coalesce(field('Microsoft.CognitiveServices/accounts/deployments/sku.capacity'), 0)))]", "greater": "[parameters('maxCapacity')]"}
           ]
         }
       ]
