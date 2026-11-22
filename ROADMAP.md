@@ -28,14 +28,21 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
   - D-5 Web chat + Slack approvals ([ADR-0007](docs/adr/0007-chat-surfaces.md))
 - [x] AI-DLC spec-first workflow adopted, hand-rolled ([ADR-0010](docs/adr/0010-ai-dlc-spec-driven-workflow.md),
       [spec template](docs/specs/TEMPLATE.md)); from Kaval KAV-120 (2026-11-18)
-- [ ] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2)
+- [x] Requirement-to-test check in CI: a requirement ID with no citing test fails (KAV-120 Stage 2;
+      `scripts/dev/spec_coverage.py`, THL-14, 2026-11-18)
 - [ ] SPEC-001 for Phase 0 and SPEC-002 for Phase 1 drafted and approved before building
-- [ ] Sign up: Jira Cloud free site (project `THL`), ServiceNow developer program + PDI, Slack
-      workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group
-- [ ] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
-- [ ] Jira project + epics mirroring this roadmap
-- [ ] Azure budgets **before** the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on
-      the model (ADR-0013)
+      (SPEC-001 approved 2026-11-18; SPEC-002 not drafted yet)
+- [x] Sign up: Jira Cloud free site (project `THL`), ServiceNow developer program + PDI, Slack
+      workspace app, Claude on Microsoft Foundry in Thalam's own Azure resource group (THL-20,
+      THL-24; proofs in [Lab 00](docs/labs/00-foundations.md), 2026-11-22)
+- [x] Git repo `thalam`, GitHub, branch protection, CI skeleton (ruff, mypy, pytest, gitleaks, CodeQL)
+      (public since 2026-11-18, ruleset on `main`; THL-11, THL-18, THL-19)
+- [x] Jira project + epics mirroring this roadmap (THL-1 to THL-9, THL-10, 2026-11-18)
+- [x] Azure budgets **before** the model deployment: ₹1,500 (alerts 70 / 85 / 95 %) and ₹1,000 on
+      the model (ADR-0013; created by Terraform before the deployment, THL-24, 2026-11-22)
+- [x] Progress dashboard: `make dashboard` builds it from this file, the specs and labs, git,
+      [architecture.toml](docs/architecture/architecture.toml) and saved copies of Jira and Azure
+      (THL-25, 2026-11-22)
 - [ ] Azure cost guardrails **before** the model deployment
       ([ADR-0014](docs/adr/0014-azure-cost-guardrails.md), THL-24; the brake moved here from
       Phase 2): parked by default (`make foundry-up` / `foundry-down`), capacity 1, Azure Policy
