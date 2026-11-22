@@ -34,7 +34,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
 PARAM = re.compile(r"^\[parameters\('(\w+)'\)\]$")
 MISSING = object()
 
-# The parameter values Terraform passes to each rule (infra/modules/azure-guardrails/main.tf).
+# The parameter values Terraform passes to each rule (infra/modules/azure-guardrails/policy.tf).
 PARAMS: dict[str, dict[str, Any]] = {
     "deployments": {
         "allowedModels": [NUMBERS["model"]["name"]],
