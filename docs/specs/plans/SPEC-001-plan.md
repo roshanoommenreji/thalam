@@ -2045,6 +2045,66 @@ Expected: seven `PASS` lines and exit 0. What a failure usually means:
 
 - [ ] **Step 3: Fill in Lab 00's evidence** for sections 5 and 8 (paste the check output), plus the expiry table. Do it on branch `docs/THL-20-lab-00-sandbox-evidence`, commit `docs: THL-20 Lab 00 evidence for the sandboxes`, through a PR as in Task 9 step 7 (explicit title, `--author-email`).
 
+*Amended 2026-11-22 (THL-24, [ADR-0014](../../adr/0014-azure-cost-guardrails.md)):* steps A–C are done (PR #6). Step D
+(section 5) waits for Task 10G: the guardrails are built and proven before the deployment exists.
+
+---
+
+### Task 10G: Azure cost guardrails before the deployment (SPEC-001-R14 to R20)
+
+Story key: `THL-24`. Branch `feat/THL-24-azure-guardrails`. Approved by Roshan 2026-11-22 (R14–R20 as written).
+
+**One source for the numbers.** `infra/modules/azure-guardrails/guardrails.json` holds the region, both budgets
+(amounts, alert thresholds, brake line), the model (name, version, format, deployment type, capacity 1, cap 3),
+the prices and the runaway arithmetic. Terraform reads it with `jsondecode(file(...))`; the scripts read it with
+`json.load`; the policy files take parameters and hold no numbers. The wiring test (R18) checks that the documents
+quote the same numbers and that no code repeats them.
+
+**Files:**
+
+| File | Responsibility | Req |
+|---|---|---|
+| `infra/modules/azure-guardrails/guardrails.json` | The numbers, once | R18 |
+| `infra/modules/azure-guardrails/policy/{deployments,accounts,search}.json` | Custom deny rules: the model, deployment type and capacity cap; `AIServices` only; Search Free only | R15 |
+| `infra/modules/azure-guardrails/brake/brake_runbook.py` | The brake: stdlib only, Python 3.10 runtime; lists and deletes every deployment on the one account | R16 |
+| `infra/modules/azure-guardrails/*.tf` | Resource group, policy initiative and assignment (two built-ins: Allowed locations `e56962a6-…`, Not allowed resource types `6c112d4e-…`), Foundry account and project, both budgets, the action group, the Automation account, runbook, webhook, nightly schedule, custom role and assignment | R15, R16 |
+| `infra/modules/azure-guardrails/tests/test_azure_policy.py` | A small evaluator for the rules' subset (`allOf`/`anyOf`/`not`, `equals`/`in`/`notIn`/`greater`); capacity 4 denied, 3 allowed; other model or type denied | R15 |
+| `infra/modules/azure-guardrails/tests/test_brake_runbook.py` | Fake HTTP: dry run, nothing to delete, 404 is success, one failure fails the run after the rest; the role has exactly three actions on the one account | R16 |
+| `infra/envs/azure/{main,variables}.tf`, `terraform.tfvars.example` | Root: provider `azurerm` 5.14, local state (gitignored); the subscription comes from `az account show` in the Makefile, the Foundry name and alert e-mail from `.env` | — |
+| `scripts/ops/azure_cli.py` | Runs `az` (and `az rest` with `{subscriptionId}`), reads `.env`, never prints IDs; the shared guardrails check | R14, R17 |
+| `scripts/ops/foundry_park.py` + `test_foundry_park.py` | `up` (after the guardrails check), `down`, `status` | R14 |
+| `scripts/ops/azure_sweep.py` + `test_azure_sweep.py` | The read-only sweep | R17 |
+| `scripts/dev/test_budget_wiring.py` | Numbers agree, runaway arithmetic, `settings.json` denies | R18, R19 |
+| `Makefile`, `pyproject.toml`, `scripts/dev/spec_coverage.py`, `.gitignore`, `.env.example`, `.claude/settings.json` | Targets `guardrails-plan`, `guardrails-apply`, `foundry-up`, `foundry-down`, `foundry-status`, `azure-sweep`; `scripts/ops` and `infra` added to pytest and the R8 scan; Terraform state and tfvars ignored; `THALAM_ALERT_EMAIL`; the denies | — |
+
+**Steps (each test first, run red, then the code, run green, then commit):**
+
+- [ ] **G1** `docs: THL-24 ADR-0014 and SPEC-001 R14–R20, approved`: the ADR, the ADR-0013 note, the spec
+  amendment and this plan section, first, as ADR-0010 asks. The requirement check stays red on the missing proof
+  files until G7 adds the last one; CI runs on the PR's head and the PR is squashed, so only the end state lands.
+  Same commit: testpaths, the R8 scan folders (with a test that a tag under `infra/` counts), and `.gitignore`
+  (`*.tfstate*`, `.terraform/`, `*.tfvars`, keeping `*.tfvars.example`).
+- [ ] **G2** `feat: THL-24 the numbers and the policy rules (SPEC-001-R15)`: `guardrails.json`, the three policy
+  files, the evaluator test.
+- [ ] **G3** `feat: THL-24 the brake runbook (SPEC-001-R16)`: the runbook and its tests. The account ID reaches the
+  runbook as Terraform replaces `__ACCOUNT_ID__` in its text, so nothing in git names it and the runbook takes
+  no parameters. It refuses to run while the placeholder is still there.
+- [ ] **G4** `feat: THL-24 the Terraform for the guardrails`: the module and the root; `terraform fmt -check` and
+  `terraform validate` pass; the role test from G3 reads the module.
+- [ ] **G5** `feat: THL-24 park and unpark the deployment (SPEC-001-R14)`: `azure_cli.py`, `foundry_park.py`, tests
+  with a fake `az` runner: up refuses on each failed check, up is a no-op when already up, down is a no-op when
+  parked, no output line holds an ID or the resource name.
+- [ ] **G6** `feat: THL-24 the sweep (SPEC-001-R17)`: `azure_sweep.py` and tests, one per failure case, plus clean.
+- [ ] **G7** `test: THL-24 the cost numbers agree (SPEC-001-R18, R19)`: the wiring test, the settings denies, the
+  Makefile targets, `.env.example`.
+- [ ] **G8** `docs: THL-24 the docs that follow the guardrails`: Lab 00 §5 rewritten in the new order, `docs/cost`, CLAUDE.md rule 1, ROADMAP, a runbook for
+  a fired brake, the journal.
+- [ ] **G9 (STOP — Roshan's go for each)** live, in Lab 00 §5's order: register the resource providers;
+  `make guardrails-plan`, then `guardrails-apply`; the refused capacity-4 deployment; the brake test-fired through
+  the action group (dry run first, then real on a deployment made for it); `make foundry-up`; `.env`;
+  `make sandboxes` (7 PASS); R20's one paid call; `make foundry-down`; `make azure-sweep` clean; R20 checked
+  within 72 hours.
+
 ---
 
 ### Task 11: Close the phase — docs that follow, spec to Built
@@ -2250,3 +2310,19 @@ key did not exist yet ([ADR-0012](../../adr/0012-microsoft-foundry-and-azure.md)
 - **Docs:** CLAUDE.md rules 1 and 2, ROADMAP Phases 0, 2, 7 and 8, the new `docs/cost/README.md`,
   and FS-5 (Work IQ and Teams).
 - **Jira:** THL-8 was renamed "Kubernetes and Azure", and THL-20 and THL-21 were rewritten.
+
+## As built (2026-11-22, the cost guardrails, THL-24)
+
+Task 10G followed the steps above, with these differences:
+- **No `terraform.tfvars.example`:** the Foundry name and the alert e-mail come from `.env`. The new
+  `scripts/ops/tf.py` passes them, and the subscription, to Terraform as environment variables.
+  The Makefile does not `source .env`, because that would run every value as shell.
+- **G7 is `feat:`:** the commit hook allows feat, fix, docs, infra and chore only.
+- **The brake's names** (Automation account, runbook, action group, schedule) also live in
+  `guardrails.json`.
+- **The brake's role** is defined on the resource group and assigned on the Foundry account only:
+  Azure has no resource-level assignable scope.
+- **`.claude/settings.json`** (R19): the auto-mode check rightly refused the agent editing its own
+  permissions. Roshan reviewed the proposed change, and Claude applied it at his explicit
+  instruction, in its own commit.
+- **Tests:** 146 → 257 collected.

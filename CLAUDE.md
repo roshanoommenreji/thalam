@@ -44,8 +44,21 @@ Set by [ADR-0013](docs/adr/0013-cost-ceiling-1500-inr.md), in the billing curren
 shape of [ADR-0008](docs/adr/0008-cost-ceiling.md). It covers Azure, model tokens and any SaaS
 tier. The hosted model has its own ₹1,000 budget, and the router's cap is $10. Going above ₹1,500
 needs a new ADR, written before the spend. Azure pay-as-you-go has **no hard spending limit**: its
-budgets (₹1,500 at 70 / 85 / 95 %, ₹1,000 on the model) only alert. The router's in-code cap is the brake, and a budget always exists before the
-resource it guards ([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)).
+budgets (₹1,500 at 70 / 85 / 95 %, ₹1,000 on the model at 50 / 80 / 100 %) only alert, and late. A
+budget always exists before the resource it guards
+([ADR-0012](docs/adr/0012-microsoft-foundry-and-azure.md)).
+
+**The guardrails** ([ADR-0014](docs/adr/0014-azure-cost-guardrails.md)). Every number lives once,
+in `infra/modules/azure-guardrails/guardrails.json`, and a test checks the documents quote it.
+- The Claude deployment is **parked by default**. `make foundry-up` creates it only when every
+  guardrail holds, and `make foundry-down` parks it again. Run `make azure-sweep` at the end of
+  every session.
+- It runs at **capacity 1** (1 request and 1,000 tokens a minute).
+- Azure Policy on `rg-thalam` holds it to Claude Haiku 5.5 on Global Standard, with a **cap of 3**.
+- **The brake:** at ₹1,425 total or ₹1,000 on the model, a runbook deletes the deployment, and it
+  also runs every night at 02:00 IST.
+- The router's in-code cap (Phase 2) stops spend earlier, in code.
+- Never weaken a guardrail to get unblocked. Changing one needs an ADR first.
 
 Before proposing *any* paid resource, state its monthly cost and verify the price on the day.
 Kaval's "never without a conversation" list, in Azure terms:

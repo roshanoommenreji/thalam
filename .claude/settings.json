@@ -11,6 +11,11 @@
       "Bash(az cognitiveservices account deployment show:*)",
       "Bash(az consumption budget list:*)",
       "Bash(az consumption budget show:*)",
+      "Bash(az resource list:*)",
+      "Bash(az policy assignment list:*)",
+      "Bash(az policy assignment show:*)",
+      "Bash(az monitor action-group show:*)",
+      "Bash(az rest --method get:*)",
 
       "Bash(terraform fmt:*)",
       "Bash(terraform validate:*)",
@@ -43,6 +48,10 @@
       "Bash(make help:*)",
       "Bash(make test:*)",
       "Bash(make lint:*)",
+      "Bash(make azure-sweep:*)",
+      "Bash(make foundry-status:*)",
+      "Bash(make foundry-down:*)",
+      "Bash(make guardrails-plan:*)",
 
       "Bash(ruff check:*)",
       "Bash(mypy:*)",
@@ -53,7 +62,8 @@
     ],
     "ask": [
       "Bash(terraform apply:*)",
-      "Bash(terraform destroy:*)",
+      "Bash(make guardrails-apply:*)",
+      "Bash(make foundry-up:*)",
       "Bash(kubectl delete:*)",
       "Bash(kubectl apply:*)",
       "Bash(make up:*)",
@@ -63,7 +73,15 @@
       "Bash(git push:*)"
     ],
     "deny": [
-      "Bash(az cognitiveservices account keys list:*)"
+      "Bash(az cognitiveservices account keys list:*)",
+      "Bash(az policy assignment delete:*)",
+      "Bash(az policy exemption create:*)",
+      "Bash(az consumption budget delete:*)",
+      "Bash(az monitor action-group delete:*)",
+      "Bash(az rest --method delete:*)",
+      "Bash(az rest --method DELETE:*)",
+      "Bash(terraform destroy:*)",
+      "Bash(terraform -chdir=infra/envs/azure destroy:*)"
     ]
   }
 }

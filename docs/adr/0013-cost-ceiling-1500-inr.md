@@ -62,7 +62,7 @@ invoice.
   an hour) is about ₹4,700 a month. Phase 7 hosting has to start on demand and park when idle, like
   Kaval's production, or stay on local k3d. The Phase 7 spec decides, with prices checked on the day.
 - **Foundry IQ stays on the Free tier.** Serverless is used only if its usage fits what is left.
-- **Alerts are not a stop.** Phase 2 adds an automated brake. At the ₹1,425 alert, an action group
+- **Alerts are not a stop.** *Moved forward 2026-11-22 by [ADR-0014](0014-azure-cost-guardrails.md): the brake is built in Phase 0, before the deployment, with parking, a rate cap, Azure Policy and a sweep.* Phase 2 adds an automated brake. At the ₹1,425 alert, an action group
   removes the Claude deployment, which can be redeployed free, so a runaway loop cannot keep
   spending while the alert email waits to be read. The router's cap stops it earlier in code.
 

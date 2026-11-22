@@ -19,15 +19,40 @@ checked on the day they are used. The ones below were checked on **2026-11-22**.
 | Meter | Where it shows | Guard |
 |---|---|---|
 | Azure resources (Phase 7 hosting, Foundry IQ) | the Azure invoice, Cost analysis on `rg-thalam` | budget `thalam-total`: ₹1,500 a month, alerts at 70 / 85 / 95 % |
-| Claude tokens (Claude Consumption Units, through Azure Marketplace) | the same invoice | budget `thalam-model`: ₹1,000 a month; the router's $10 cap from Phase 2 |
+| Claude tokens (Claude Consumption Units, through Azure Marketplace) | the same invoice | budget `thalam-model`: ₹1,000 a month, alerts at 50 / 80 / 100 %; the guardrails below; the router's $10 cap from Phase 2 |
 | SaaS tiers | each vendor | none yet: every one is on a free plan |
 
 **Azure pay-as-you-go has no hard spending limit.** A budget only sends alerts, and its data can lag
-a day or more. Three things make up for that:
-1. the budgets exist before the resource they watch;
-2. Phase 0's only model call is a token count;
-3. from Phase 2 the router refuses hosted calls past the cap and falls back to the local model
-   (ADR-0006).
+up to three days. The guardrails make up for that
+([ADR-0014](../adr/0014-azure-cost-guardrails.md)). Their numbers live in
+`infra/modules/azure-guardrails/guardrails.json`, and a test checks this page quotes them.
+
+| Guardrail | What it does |
+|---|---|
+| Parked by default | The deployment exists only between `make foundry-up` and `make foundry-down`. An idle Global Standard deployment costs nothing, so parking loses nothing |
+| Rate cap | Capacity 1: 1 request and 1,000 tokens a minute |
+| Azure Policy on `rg-thalam` | Claude Haiku 5.5 on Global Standard only, at a cap of 3; East US 2 only; AI Search Free only; no VMs, AKS, NAT, gateways, Front Door or managed databases |
+| The brake | At ₹1,425 total (95 %) or ₹1,000 on the model (100 %), an action group runs a runbook that deletes the deployment. It also runs every night at 02:00 IST |
+| `make azure-sweep` | Read-only; fails on anything billable left behind |
+
+**The worst case, worked out.** Each capacity unit allows 1,000 tokens a minute. Count all of them
+as input ($0.10 per million) **and** as output ($0.50 per million), all day:
+- 1,000 × 1,440 × $0.60 per million = $0.864, about **₹82 a unit a day**;
+- at the cap of 3, about **₹246 a day**;
+- over three days of budget lag, about ₹738, which still fits inside the ₹750 between the plan
+  and the ceiling.
+
+At Azure's default of 10 units, the same worst case is about ₹820 a day.
+
+**What the guardrails cost:** about ₹0 a month.
+- Azure Policy, budgets and roles are free.
+- Action-group e-mail and webhooks are within their free grant (secure webhooks are ₹0 for the
+  first tier, then ₹0.0057 per 10).
+- Automation's first 500 job-minutes a month are free, then ₹0.1905 a minute. About 31 short
+  runbook runs a month use a few of them.
+
+From Phase 2 the router also refuses hosted calls past its cap and falls back to the local model
+(ADR-0006).
 
 ## Prices checked on 2026-11-22
 

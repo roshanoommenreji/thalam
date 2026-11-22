@@ -11,8 +11,8 @@ sync: ## Install exactly what uv.lock says into .venv (what CI uses)
 
 .PHONY: lint
 lint: ## ruff + mypy --strict (SPEC-001-R4)
-	uv run ruff check services scripts
-	uv run mypy services scripts/dev
+	uv run ruff check services scripts infra
+	uv run mypy services scripts/dev scripts/ops infra/modules/azure-guardrails
 
 .PHONY: test
 test: ## pytest, then the spec coverage table (SPEC-001-R8)
@@ -31,3 +31,29 @@ secrets-scan: ## gitleaks over the whole history
 .PHONY: sandboxes
 sandboxes: ## Prove read-only access to every sandbox (reads .env; SPEC-001-R10..R13)
 	uv run python scripts/dev/check_sandboxes.py
+
+# ─── Azure guardrails (ADR-0014). Nothing below reads .env as shell; see scripts/ops/tf.py ───
+
+.PHONY: guardrails-plan
+guardrails-plan: ## Plan the Azure guardrails with Terraform; changes nothing (SPEC-001-R15, R16)
+	uv run python scripts/ops/tf.py plan
+
+.PHONY: guardrails-apply
+guardrails-apply: ## Apply the saved plan; CREATES Azure resources (Roshan's go)
+	uv run python scripts/ops/tf.py apply
+
+.PHONY: foundry-up
+foundry-up: ## Create the Claude deployment, only if every guardrail holds (SPEC-001-R14)
+	uv run python scripts/ops/foundry_park.py up
+
+.PHONY: foundry-down
+foundry-down: ## Park it: delete every deployment on the Foundry account (SPEC-001-R14)
+	uv run python scripts/ops/foundry_park.py down
+
+.PHONY: foundry-status
+foundry-status: ## Up or parked
+	uv run python scripts/ops/foundry_park.py status
+
+.PHONY: azure-sweep
+azure-sweep: ## Read-only exit gate: fails on anything billable left behind (SPEC-001-R17)
+	uv run python scripts/ops/azure_sweep.py $(ARGS)

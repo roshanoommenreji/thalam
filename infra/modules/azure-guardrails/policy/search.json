@@ -1,0 +1,20 @@
+{
+  "displayName": "Thalam: AI Search (Foundry IQ) stays on an allowed tier",
+  "description": "Refuses an AI Search service on a tier that is not allowed; Basic and above cost about $74 a month or more (ADR-0013, ADR-0014, SPEC-001-R15).",
+  "mode": "All",
+  "parameters": {
+    "allowedSkus": {
+      "type": "Array",
+      "metadata": {"displayName": "Allowed tiers", "description": "Search SKU names, such as free."}
+    }
+  },
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {"field": "type", "equals": "Microsoft.Search/searchServices"},
+        {"field": "Microsoft.Search/searchServices/sku.name", "notIn": "[parameters('allowedSkus')]"}
+      ]
+    },
+    "then": {"effect": "deny"}
+  }
+}

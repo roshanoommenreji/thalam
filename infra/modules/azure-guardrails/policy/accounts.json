@@ -1,0 +1,20 @@
+{
+  "displayName": "Thalam: Foundry accounts are of an allowed kind",
+  "description": "Refuses a Cognitive Services account whose kind is not allowed, so only a Foundry (AIServices) account can hold Thalam's deployment (ADR-0014, SPEC-001-R15).",
+  "mode": "All",
+  "parameters": {
+    "allowedKinds": {
+      "type": "Array",
+      "metadata": {"displayName": "Allowed kinds", "description": "Account kinds, such as AIServices."}
+    }
+  },
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {"field": "type", "equals": "Microsoft.CognitiveServices/accounts"},
+        {"field": "kind", "notIn": "[parameters('allowedKinds')]"}
+      ]
+    },
+    "then": {"effect": "deny"}
+  }
+}

@@ -31,6 +31,16 @@ Foundry, reached only through the router; Foundry IQ (Free or Serverless tier) s
 policies, runbooks, CAB rules and freeze calendars from Phase 2. Postgres stays the system of
 record for the release graph. Phase 7 hosts the services on Azure.
 
+**Cost guardrails around the hosted model** ([ADR-0014](../adr/0014-azure-cost-guardrails.md)),
+outside the application and built with Terraform (`infra/`):
+- Azure Policy on Thalam's resource group (one model, one deployment type, a capacity cap);
+- two budgets whose brake-line alerts go to an action group;
+- an Automation runbook that deletes the deployment, started by that action group and every night;
+- `make foundry-up` / `foundry-down`, which own the deployment, and `make azure-sweep`, which
+  checks it.
+
+None of these is reachable from `agent` or `executor`.
+
 ## Core entities
 
 | Table | Meaning |

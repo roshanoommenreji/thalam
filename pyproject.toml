@@ -31,4 +31,4 @@ python_version = "3.11"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["services", "scripts/dev"]
+testpaths = ["services", "scripts/dev", "scripts/ops", "infra"]
