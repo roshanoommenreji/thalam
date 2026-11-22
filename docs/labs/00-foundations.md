@@ -153,6 +153,11 @@ moved, follow the step's intent and note the new label here.
      address `https://<your-resource>.services.ai.azure.com`, so it lives in `.env` only.
    - `LLM_HOSTED_MODEL=<deployment-name>`: the name the deployment will get.
    - `THALAM_ALERT_EMAIL=<you@example.com>`: where the alerts and the brake's notice go.
+   - **Anthropic's attestation fields:** `CLAUDE_ORGANIZATION_NAME`, `CLAUDE_COUNTRY_CODE` (two
+     capital letters) and `CLAUDE_INDUSTRY` (lower case, such as `technology`). Every Claude
+     deployment must carry them (`modelProviderData`). Azure uses them to **accept Anthropic's
+     Commercial Terms on your behalf** through the Marketplace. So read those terms first, and
+     enter your real organization, country and industry. They stay in `.env`, never in git.
 4. **Plan:** `make guardrails-plan`. Nothing changes yet. Read the plan: about 20 resources to
    add, 0 to change, 0 to destroy:
    - the resource group;
@@ -193,10 +198,11 @@ moved, follow the step's intent and note the new label here.
      forced; its first real crossing is that link's proof, as in Kaval's ADR-0064.
 8. **R14, unpark:** `make foundry-up`. It prints every guardrail, then
    `UP claude-haiku-5-5, GlobalStandard, capacity 1`.
-   - **A Marketplace error on the first deployment:** deploy once from the portal instead (the
-     project → Model catalog → Claude Haiku 5.5 → Deploy → Global Standard, capacity 1, the same
-     deployment name). That accepts the Anthropic offer. Then `make foundry-down` and
-     `make foundry-up` again.
+   - `foundry-up` sends the deployment through Resource Manager, with the attestation fields from
+     step 3. `az cognitiveservices account deployment create` cannot send them and fails with
+     `InvalidModelProviderData`.
+   - **The deployment ends `Failed` (for example `AnthropicOrganizationCreationException`):**
+     check the three fields, then `make foundry-down` and `make foundry-up` again.
    - **The offer refused because of the billing country:** stop. ADR-0012's fallback needs a new
      R13 amendment first.
 9. **Key:** the Foundry resource → Keys and Endpoint → copy Key 1 into `.env` as

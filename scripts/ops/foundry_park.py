@@ -15,7 +15,11 @@ the model and capacity from guardrails.json. Prints no resource name, address or
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
+import time
+from collections.abc import Callable
 from typing import Any
 
 import azure_cli
@@ -34,13 +38,40 @@ def _names(env: dict[str, str]) -> tuple[str, str] | None:
     return account, deployment
 
 
+COUNTRY = re.compile(r"^[A-Z]{2}$")
+INDUSTRY = re.compile(r"^[a-z][a-z_ -]*$")
+# The API version Microsoft's own Claude sample uses with modelProviderData (Azure-Samples/claude).
+DEPLOYMENT_API = "2025-10-01-preview"
+POLL_SECONDS, POLL_TIMES = 10, 60  # up to ten minutes
+
+
+def _provider_data(env: dict[str, str]) -> dict[str, str] | None:
+    """Anthropic's attestation fields. Azure signs the Anthropic Marketplace offer with them on
+    every Claude deployment, so they must describe the real organization (Lab 00 step 3)."""
+    org = env.get("CLAUDE_ORGANIZATION_NAME", "").strip()
+    country = env.get("CLAUDE_COUNTRY_CODE", "").strip()
+    industry = env.get("CLAUDE_INDUSTRY", "").strip()
+    problems = []
+    if not org or "<" in org:
+        problems.append("CLAUDE_ORGANIZATION_NAME (your organization's name)")
+    if not COUNTRY.match(country):
+        problems.append("CLAUDE_COUNTRY_CODE (two capital letters, such as IN)")
+    if not INDUSTRY.match(industry):
+        problems.append("CLAUDE_INDUSTRY (lower case, such as technology)")
+    if problems:
+        print("FAIL  set in .env: " + "; ".join(problems))
+        return None
+    return {"organizationName": org, "countryCode": country, "industry": industry}
+
+
 def _describe(d: dict[str, Any]) -> str:
     sku = d.get("sku", {})
     model = d.get("properties", {}).get("model", {})
     return f"{model.get('name', '?')}, {sku.get('name', '?')}, capacity {sku.get('capacity', '?')}"
 
 
-def up(runner: Runner, numbers: dict[str, Any], account: str, deployment: str) -> int:
+def up(runner: Runner, numbers: dict[str, Any], account: str, deployment: str,
+       provider: dict[str, str], sleep: Callable[[float], None] = time.sleep) -> int:
     results = azure_cli.guardrails(runner, numbers)
     for result in results:
         print(result.line())
@@ -60,21 +91,35 @@ def up(runner: Runner, numbers: dict[str, Any], account: str, deployment: str) -
         print("REFUSED  the account holds a deployment that is not the approved one; run "
               "`make foundry-down` first")
         return 1
+    # `az cognitiveservices account deployment create` cannot send modelProviderData, which
+    # Anthropic models require, so the deployment is PUT through Resource Manager directly.
+    url = (f"{azure_cli.ARM}{azure_cli.group_path(numbers)}/providers/"
+           f"Microsoft.CognitiveServices/accounts/{account}/deployments/{deployment}"
+           f"?api-version={DEPLOYMENT_API}")
+    body = {
+        "sku": {"name": model["sku"], "capacity": model["capacity"]},
+        "properties": {
+            "model": {"format": model["format"], "name": model["name"],
+                      "version": model["version"]},
+            "modelProviderData": provider,
+        },
+    }
     try:
-        made = azure_cli.az_json(runner, [
-            "cognitiveservices", "account", "deployment", "create",
-            "--resource-group", numbers["resource_group"],
-            "--name", account,
-            "--deployment-name", deployment,
-            "--model-name", model["name"],
-            "--model-version", model["version"],
-            "--model-format", model["format"],
-            "--sku-name", model["sku"],
-            "--sku-capacity", str(model["capacity"]),
-            "-o", "json",
-        ]) or {}
+        made = azure_cli.az_json(runner, ["rest", "--method", "put", "--url", url,
+                                          "--body", json.dumps(body)]) or {}
+        state = str(made.get("properties", {}).get("provisioningState", "Creating"))
+        for _ in range(POLL_TIMES):
+            if state not in {"Creating", "Accepted", "Updating", "Running"}:
+                break
+            sleep(POLL_SECONDS)
+            made = azure_cli.az_json(runner, ["rest", "--method", "get", "--url", url]) or {}
+            state = str(made.get("properties", {}).get("provisioningState", "?"))
     except AzError as err:
         print(f"FAIL  creating the deployment: {err}")
+        return 1
+    if state != "Succeeded":
+        code = made.get("properties", {}).get("error", {}).get("code", "no error code")
+        print(f"FAIL  the deployment ended {state} ({code}); run `make foundry-down` to clear it")
         return 1
     print(f"UP  {_describe(made)}. Park it with `make foundry-down` when you are done.")
     return 0
@@ -118,17 +163,22 @@ def status(runner: Runner, numbers: dict[str, Any], account: str) -> int:
 
 
 def main(argv: list[str] | None = None, runner: Runner = azure_cli.real_az,
-         env: dict[str, str] | None = None) -> int:
+         env: dict[str, str] | None = None,
+         sleep: Callable[[float], None] = time.sleep) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("command", choices=["up", "down", "status"])
     args = parser.parse_args(argv)
-    names = _names(azure_cli.read_env() if env is None else env)
+    values = azure_cli.read_env() if env is None else env
+    names = _names(values)
     if names is None:
         return 1
     account, deployment = names
     numbers = azure_cli.load_numbers()
     if args.command == "up":
-        return up(runner, numbers, account, deployment)
+        provider = _provider_data(values)
+        if provider is None:
+            return 1
+        return up(runner, numbers, account, deployment, provider, sleep)
     if args.command == "down":
         return down(runner, numbers, account)
     return status(runner, numbers, account)
