@@ -1262,32 +1262,38 @@ def render_architecture(d: Data, md: Md) -> str:
 </section>"""
 
 
-def render_flows(d: Data, md: Md) -> str:
-    flows = d.arch.get("flow", [])
-    index, blocks = [], []
-    for f in flows:
-        state, words = _phase_look(f.get("phase"), d)
-        lanes = [(str(a), str(b)) for a, b in f["lanes"]]
-        label = dict(lanes)
-        steps = [diagrams.Step(s["from"], s["to"], s["label"], s.get("kind", "call"))
-                 for s in f["steps"]]
-        svg = diagrams.sequence(lanes, steps, uid=f["id"],
-                                aria=f"{f['title']}: {len(steps)} steps between "
-                                     f"{', '.join(label.values())}.")
-        rows = "".join(
-            f'<li><strong>{esc(s["label"])}</strong> <span class="muted small">'
-            f'{esc(label.get(s["from"], s["from"]))} → {esc(label.get(s["to"], s["to"]))}'
-            f"</span><br>{md(s.get('note', ''))}</li>" for s in f["steps"])
-        badge = pill(STATE_PILL.get(state, "todo"), f"Phase {f.get('phase')}: {words}")
-        index.append(f'<li><a href="#{esc(f["id"])}">{esc(f["title"])}</a> {badge}</li>')
-        blocks.append(f"""
+def _flow_card(f: dict[str, Any], d: Data, md: Md) -> tuple[str, str]:
+    """One flow as (its line in an index, its card): a sequence diagram and every step's note."""
+    state, words = _phase_look(f.get("phase"), d)
+    lanes = [(str(a), str(b)) for a, b in f["lanes"]]
+    label = dict(lanes)
+    steps = [diagrams.Step(s["from"], s["to"], s["label"], s.get("kind", "call"))
+             for s in f["steps"]]
+    svg = diagrams.sequence(lanes, steps, uid=f["id"],
+                            aria=f"{f['title']}: {len(steps)} steps between "
+                                 f"{', '.join(label.values())}.")
+    rows = "".join(
+        f'<li><strong>{esc(s["label"])}</strong> <span class="muted small">'
+        f'{esc(label.get(s["from"], s["from"]))} → {esc(label.get(s["to"], s["to"]))}'
+        f"</span><br>{md(s.get('note', ''))}</li>" for s in f["steps"])
+    badge = pill(STATE_PILL.get(state, "todo"), f"Phase {f.get('phase')}: {words}")
+    index = f'<li><a href="#{esc(f["id"])}">{esc(f["title"])}</a> {badge}</li>'
+    return index, f"""
 <article class="card flow" id="{esc(f['id'])}">
   <div class="flow-head"><h3>{esc(f['title'])}</h3>{badge}</div>
   <p><strong>Starts when:</strong> {md(f.get('trigger', ''))}</p>
   {_figure(svg, "Solid arrows are calls, dashed arrows are replies, and the coloured ones change something outside the caller.")}
   <ol class="steps">{rows}</ol>
   <p class="outcome"><strong>Ends with:</strong> {md(f.get('outcome', ''))}</p>
-</article>""")
+</article>"""
+
+
+def render_flows(d: Data, md: Md) -> str:
+    index, blocks = [], []
+    for f in d.arch.get("flow", []):
+        line, card = _flow_card(f, d, md)
+        index.append(line)
+        blocks.append(card)
     return f"""
 <section class="view" id="view-flows" aria-labelledby="h-flows" hidden>
   <h2 id="h-flows">Flows</h2>
@@ -1341,27 +1347,55 @@ def _required_checks(root: Path) -> list[str]:
     return []
 
 
+def _environments(d: Data, md: Md) -> str:
+    """local, staging and prod: where each runs, when, what it gets, and its phase's state."""
+    rows = []
+    for e in d.arch.get("devops", {}).get("environment", []):
+        state, words = _phase_look(e.get("phase"), d)
+        badge = pill(STATE_PILL.get(state, "todo"), f"Phase {e.get('phase')}: {words}")
+        rows.append(f'<tr id="env-{esc(e["id"])}"><td><strong>{esc(e["name"])}</strong></td>'
+                    f'<td>{md(e["where"])}</td><td>{md(e["runs"])}</td><td>{md(e["gets"])}</td>'
+                    f"<td>{badge}</td></tr>")
+    return ('<div class="scroll"><table><thead><tr><th>Environment</th><th>Where</th>'
+            "<th>When it runs</th><th>What it gets</th><th>State</th></tr></thead>"
+            f'<tbody>{"".join(rows)}</tbody></table></div>')
+
+
 def render_devops(d: Data, md: Md) -> str:
-    pipeline = diagrams.graph(_nodes("devops", d, _devops_look), _edges("devops", d),
+    nodes = _nodes("devops", d, _devops_look)
+    pipeline = diagrams.graph(nodes, _edges("devops", d),
                               uid="dev", aria="From a story branch through two hooks and the "
                                               "local checks to a pull request, five required "
                                               "checks, the ruleset and a squash merge to main; "
-                                              "Phase 7 adds build once, staging and production.")
+                                              "from Phase 7, one image built once and signed, "
+                                              "staging, the promote gate and production.")
     infra = diagrams.graph(_nodes("infra", d, _devops_look), _edges("infra", d), uid="infra",
                            aria="Azure changes by a saved Terraform plan that Roshan applies; "
                                 "the sweep reads the result.")
     required = "".join(f"<li><code>{esc(c)}</code></li>" for c in _required_checks(ROOT))
     total = sum(d.tests.values())
+    states = [s for s in ("live", "built", "now", "planned") if any(n.state == s for n in nodes)]
+    devops = d.arch.get("devops", {})
+    cd = [_flow_card(f, d, md) for f in devops.get("flow", [])]
+    kaval = "".join(f"<tr><td>{esc(r['part'])}</td><td>{md(r['kaval'])}</td>"
+                    f"<td>{md(r['thalam'])}</td></tr>" for r in devops.get("kaval", []))
     return f"""
 <section class="view" id="view-devops" aria-labelledby="h-devops" hidden>
   <h2 id="h-devops">DevOps</h2>
-  <p class="lede">How a change reaches <code>main</code>, and how Azure changes. Code goes by pull request only, behind five required checks; Azure goes by a Terraform plan that is read before it is applied. From Phase 7 the same <code>main</code> builds one signed image that is promoted, never rebuilt.</p>
-  {_legend(["live", "planned"])}
-  {_figure(pipeline, "Left to right: the laptop's hooks and checks, the pull request, the five checks the ruleset requires by name, the merge. The right-hand column is Phase 7.")}
+  <p class="lede">How a change reaches <code>main</code>, how it will reach production, and how Azure changes. Code goes by pull request only, behind five required checks: that is CI, and it runs today. CD is Phase 7's: <code>main</code> builds one signed image that is proved in staging and promoted to prod by its digest, never rebuilt. Azure goes by a Terraform plan that is read before it is applied.</p>
+  {_legend(states)}
+  {_figure(pipeline, "Left to right: the laptop's hooks and checks, the pull request, the five checks the ruleset requires by name, the merge. The right-hand column is CD, Phase 7: build once, staging, the promote gate, production.")}
   <div class="two">
     <div class="card"><h3>Required on main</h3><p class="muted small">Read from <code>.github/rulesets/main.json</code>.</p><ul class="plain">{required}</ul></div>
     <div class="card"><h3>What the checks run</h3><dl class="facts"><dt>Tests</dt><dd>{total} test functions; pytest runs each parametrized case</dd><dt>Lint</dt><dd>ruff and mypy --strict</dd><dt>Secrets</dt><dd>gitleaks, before each commit and over all history in CI</dd><dt>Scanning</dt><dd>CodeQL on Python and on the workflows; Dependabot weekly</dd></dl></div>
   </div>
+  <h3 class="sect" id="devops-cd">From main to production</h3>
+  <p>CI ends at a merge to <code>main</code>; CD starts there. One image is built once and signed, proved in staging, and promoted to prod by its digest through a pull request you merge. No CI job can reach a cluster: each cluster's Flux pulls what Git names. Kaval runs this pipeline today. Thalam builds it in Phase 7, moved to Azure, and the states below follow that phase in ROADMAP.md.</p>
+  <ul class="flow-index">{"".join(line for line, _ in cd)}</ul>
+  {_environments(d, md)}
+  <p class="muted small">The three differ only by a Helm values file and the pinned digest (CLAUDE.md rule 5).</p>
+  {"".join(card for _, card in cd)}
+  <div class="card"><h3>Kaval's pipeline, moved to Azure</h3><div class="scroll"><table><thead><tr><th>Part</th><th>Kaval, on AWS (runs today)</th><th>Thalam, on Azure (Phase 7)</th></tr></thead><tbody>{kaval}</tbody></table></div></div>
   <h3 class="sect">Changing Azure</h3>
   {_figure(infra, "Nothing reaches Azure without a saved plan, and nothing is applied without Roshan's go. The sweep closes every session.")}
   <h3 class="sect">Every stage, defined</h3>

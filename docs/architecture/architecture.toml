@@ -1192,28 +1192,41 @@ outputs = ["A known-good main"]
 [[devops.node]]
 id = "image"
 label = "Build once"
-sub = "linux/arm64, signed"
+sub = "release.yml, signed"
 kind = "planned"
 phase = 7
 col = 7.5
 row = 1.7
-file = "Phase 7 (ROADMAP.md)"
-definition = "Each image is built once for linux/arm64, signed, with an SBOM, and tagged by commit (CLAUDE.md rule 2)."
+file = "Phase 7: release.yml, copied from Kaval"
+definition = "On a merge to `main` that changes a service, each image is built once for linux/arm64 (CLAUDE.md rule 2), scanned, signed with cosign, given an SBOM and pushed to the registry tagged by commit. A second job, with no cloud access, opens the pull request that points staging at it."
 inputs = ["A commit on main"]
-outputs = ["A signed image, known by its digest"]
+outputs = ["A signed image, known by its digest", "A pull request for staging"]
 
 [[devops.node]]
 id = "staging"
 label = "Staging"
-sub = "on demand"
+sub = "on demand, Flux"
 kind = "planned"
 phase = 7
 col = 7.5
-row = 2.75
-file = "Phase 7 (ROADMAP.md)"
-definition = "Brought up only to test, then parked: inside the monthly ceiling nothing can run all month. Helm and Flux, as Kaval."
-inputs = ["An image digest"]
-outputs = ["A release verified in staging"]
+row = 2.55
+file = "Phase 7: the environment files in Git"
+definition = "Brought up only to test, then parked: inside the monthly ceiling nothing can run all month. Flux inside the cluster pulls the tag Git names; a smoke test that passes adds the digest to the passed-staging record."
+inputs = ["A merged pull request naming a tag"]
+outputs = ["A digest on the passed-staging record"]
+
+[[devops.node]]
+id = "gate"
+label = "Promote gate"
+sub = "promote.yml"
+kind = "gate"
+phase = 7
+col = 7.5
+row = 3.4
+file = "Phase 7: promote.yml, copied from Kaval"
+definition = "Run by hand with a version. Read-only checks first: the digest passed staging and still matches the registry, it is newer than prod, its UAT stories are signed off in Jira, and every image carries release.yml's signature. Only then does it open the pull request for prod, with the change record."
+inputs = ["A version or an image tag"]
+outputs = ["A pull request for prod, or a refusal that opens nothing"]
 
 [[devops.node]]
 id = "prod"
@@ -1222,10 +1235,10 @@ sub = "same digest"
 kind = "planned"
 phase = 7
 col = 7.5
-row = 3.8
-file = "Phase 7 (ROADMAP.md)"
-definition = "Gets exactly the digest staging verified; environments differ only by a values file (CLAUDE.md rule 5)."
-inputs = ["A digest that passed staging"]
+row = 4.25
+file = "Phase 7: the environment files in Git"
+definition = "Gets exactly the digest staging verified, when you merge promote.yml's pull request: that merge is the go / no-go. Environments differ only by a values file (CLAUDE.md rule 5). Started for demos and drills, then parked."
+inputs = ["A merged pull request from promote.yml"]
 outputs = ["Running Thalam"]
 
 [[devops.edge]]
@@ -1330,14 +1343,113 @@ kind = "data"
 [[devops.edge]]
 from = "image"
 to = "staging"
-label = "by digest"
+label = "PR: new tag"
 kind = "write"
 
 [[devops.edge]]
 from = "staging"
+to = "gate"
+label = "passed staging"
+kind = "data"
+
+[[devops.edge]]
+from = "gate"
 to = "prod"
-label = "promote"
+label = "PR you merge"
 kind = "write"
+
+# CI to CD: from a merge on main to production, and back. Phase 7's design, copied from Kaval's
+# release.yml, promote.yml and rollback.yml and moved to Azure (ADR-0002, ADR-0012). The details
+# are fixed in Phase 7's spec; until then this is the shape it builds to.
+[[devops.flow]]
+id = "cd-release"
+title = "From a merge on main to production"
+phase = 7
+trigger = "A story's pull request is squash-merged to `main` after the five required checks, and it changes a service."
+outcome = "Production runs the exact image that passed staging, and Git records who approved it and when. No CI job ever held a credential to a cluster."
+lanes = [["you", "Roshan"], ["release", "release.yml"], ["registry", "Image registry"], ["gitops", "Environment files in Git"], ["staging", "Staging + Flux"], ["promote", "promote.yml"], ["prod", "Prod + Flux"]]
+steps = [
+  { from = "you", to = "release", kind = "call", label = "merge to main", note = "release.yml starts on a push to `main` that changes a service. A pull request, a fork or another branch cannot start it." },
+  { from = "release", to = "registry", kind = "write", label = "signed image", note = "The `publish` job builds each image once for linux/arm64, scans it, signs it with cosign, attaches an SBOM and a build record, and pushes it tagged `sha-<short>`. It logs in to Azure by workload identity federation, with no stored secret, and it cannot write to the repository." },
+  { from = "release", to = "gitops", kind = "write", label = "PR: staging tag", note = "The `propose` job opens a pull request that points staging's files at the new tag. It has no Azure access. No job holds both powers, so a hijacked job cannot push an image and also point an environment at it." },
+  { from = "you", to = "gitops", kind = "call", label = "merge", note = "CI runs on that pull request like any other. Merging it is the decision to test this build." },
+  { from = "staging", to = "gitops", kind = "call", label = "new tag?", note = "Staging is brought up only to test, then parked. While it is up, Flux inside the cluster reads Git and finds the new tag." },
+  { from = "staging", to = "registry", kind = "call", label = "pull by digest", note = "Pulled by its content hash, so what runs is exactly what release.yml built and signed." },
+  { from = "you", to = "staging", kind = "call", label = "smoke test", note = "Run by hand against the running staging." },
+  { from = "you", to = "gitops", kind = "write", label = "passed staging", note = "The digest is added to the passed-staging record. A promotion can only choose from this record." },
+  { from = "you", to = "promote", kind = "call", label = "promote a version", note = "Run with a release version or an image tag; a version is looked up and becomes its tag." },
+  { from = "promote", to = "registry", kind = "call", label = "gate checks", note = "Read-only. Is the tag on the passed-staging record? Do the registry's digests still match it? Is it newer than prod? Is every UAT story in it signed off in Jira? Does every image carry a valid signature from release.yml on `main`? Any no is a refusal, and nothing is opened." },
+  { from = "promote", to = "gitops", kind = "write", label = "PR: prod tag", note = "A pull request that points prod's files at the tag, with the change record written from the release. Only promote.yml and rollback.yml change prod's files; the promotion guard in CI fails anyone else's attempt." },
+  { from = "you", to = "gitops", kind = "call", label = "merge = go / no-go", note = "This merge is the CAB decision. Git keeps who approved what, and when." },
+  { from = "prod", to = "registry", kind = "call", label = "pull same digest", note = "Prod's Flux sees the new tag in Git and pulls the image that passed staging. Prod, too, is started for demos and drills and then parked: inside {ceiling} a month nothing runs all month." },
+]
+
+[[devops.flow]]
+id = "cd-rollback"
+title = "Rolling production back"
+phase = 7
+trigger = "Production is unhealthy after a promotion, and the fix is to go back to an earlier version."
+outcome = "Production runs an image it has run before, and the database is never taken backwards by surprise."
+lanes = [["you", "Roshan"], ["rollback", "rollback.yml"], ["registry", "Image registry"], ["gitops", "Environment files in Git"], ["prod", "Prod + Flux"]]
+steps = [
+  { from = "you", to = "rollback", kind = "call", label = "roll back to a tag", note = "Run with an earlier tag and a reason. A rollback is an emergency, so unlike a promotion it never waits on Jira." },
+  { from = "rollback", to = "gitops", kind = "call", label = "known and safe?", note = "Has prod run this tag before, or did it pass staging? Is it older than prod? Would going back cross a database migration? A migration stops it with the reason: an older image does not undo an Alembic upgrade." },
+  { from = "rollback", to = "registry", kind = "call", label = "images still there?", note = "Read-only: its images are still in the registry, with the digests on record." },
+  { from = "rollback", to = "gitops", kind = "write", label = "PR: prod tag", note = "The same kind of pull request as a promotion, pointing prod back at the earlier tag. The promotion guard accepts exactly the tags this gate accepts." },
+  { from = "you", to = "gitops", kind = "call", label = "merge", note = "The go / no-go, as for a promotion." },
+  { from = "prod", to = "registry", kind = "call", label = "pull older digest", note = "Flux puts prod back on the earlier image." },
+]
+
+# The environments (CLAUDE.md rule 5): they differ only by a Helm values file and a pinned digest.
+[[devops.environment]]
+id = "local"
+name = "local"
+phase = 7
+where = "k3d on the laptop, with the same Helm chart"
+runs = "Whenever you develop; free"
+gets = "Any build, including one not yet merged"
+
+[[devops.environment]]
+id = "staging"
+name = "staging"
+phase = 7
+where = "Azure: k3s on a Cobalt Arm VM, or AKS with an Arm node pool, chosen and priced on the day"
+runs = "On demand: brought up to test a release, then parked"
+gets = "A signed image, by digest, once you merge release.yml's pull request"
+
+[[devops.environment]]
+id = "prod"
+name = "prod"
+phase = 7
+where = "Azure, on the same platform as staging"
+runs = "For demos and drills, then parked. Inside {ceiling} a month nothing can run all month: the smallest suitable Arm VM is about ₹4,700"
+gets = "Only a digest on the passed-staging record, through promote.yml and a pull request you merge"
+
+# What moves when Kaval's pipeline comes to Azure, and what does not.
+[[devops.kaval]]
+part = "Image registry"
+kaval = "Amazon ECR"
+thalam = "Azure Container Registry"
+
+[[devops.kaval]]
+part = "CI's cloud login"
+kaval = "GitHub OIDC to an IAM role, accepted only from `main`"
+thalam = "GitHub OIDC to an Entra ID federated credential, accepted only from `main`"
+
+[[devops.kaval]]
+part = "Cluster"
+kaval = "k3s on a Graviton server; staging built for a release and deleted after"
+thalam = "k3s on a Cobalt Arm VM, or AKS with an Arm node pool; staging on demand"
+
+[[devops.kaval]]
+part = "Secrets"
+kaval = "AWS Systems Manager Parameter Store"
+thalam = "Azure Key Vault (`.env` until then)"
+
+[[devops.kaval]]
+part = "Unchanged"
+kaval = "Helm, Flux, cosign signatures, SBOMs, the passed-staging record, the promotion guard, and the rule that no job can both reach the cloud and write the repository"
+thalam = "The same, as they are"
 
 # The infrastructure path: how Azure changes, separately from code.
 [[infra.node]]
@@ -1658,6 +1770,54 @@ where = "DevOps"
 term = "Promotion by digest"
 group = "DevOps"
 definition = "Production gets the exact image staging tested, named by its content hash, never rebuilt (CLAUDE.md rule 5)."
+where = "DevOps"
+
+[[glossary]]
+term = "GitOps"
+group = "DevOps"
+definition = "Each environment runs what Git says it should. A deploy is a commit that changes an image tag, reviewed and merged like code; the cluster pulls it, and nothing pushes into a cluster from outside."
+where = "DevOps"
+
+[[glossary]]
+term = "Flux"
+group = "DevOps"
+definition = "The GitOps agent inside each cluster. It watches that environment's files in Git and applies them, so CI never needs a credential to a cluster (Phase 7)."
+where = "DevOps"
+
+[[glossary]]
+term = "Helm chart"
+group = "DevOps"
+definition = "The package that says how Thalam runs on Kubernetes. One umbrella chart serves every environment; only its values file differs (Phase 7)."
+where = "DevOps"
+
+[[glossary]]
+term = "Image signature"
+group = "DevOps"
+definition = "A signature cosign attaches to an image when release.yml builds it. Promotion refuses an image that is unsigned, or signed by anything but release.yml on `main`."
+where = "DevOps"
+
+[[glossary]]
+term = "Workload identity federation"
+group = "DevOps"
+definition = "How a GitHub Actions job logs in to Azure with no stored key: Entra ID trusts the short-lived OIDC token GitHub issues for one repository and branch."
+where = "DevOps"
+
+[[glossary]]
+term = "Passed-staging record"
+group = "DevOps"
+definition = "The list, kept in Git, of image digests that passed staging's smoke test. promote.yml can only choose a digest from it."
+where = "DevOps"
+
+[[glossary]]
+term = "Promotion guard"
+group = "DevOps"
+definition = "A CI check that fails any pull request changing prod's image tags to one that is neither on the passed-staging record nor run by prod before, so the gate cannot be skipped by editing a file."
+where = "DevOps"
+
+[[glossary]]
+term = "Rollback"
+group = "DevOps"
+definition = "Pointing prod back at an image it ran before, through the same kind of pull request as a promotion. It stops if going back would cross a database migration."
 where = "DevOps"
 
 [[glossary]]

@@ -190,7 +190,8 @@ def test_the_real_repository_renders_every_view(
     for view, _ in dashboard.VIEWS:
         assert f'id="view-{view}"' in page
     assert "No saved copy of Jira" in page and "Azure has not been read" in page
-    for card in ("architecture-agent", "azure-runbook", "devops-ruleset", "flow-brake"):
+    for card in ("architecture-agent", "azure-runbook", "devops-ruleset", "flow-brake",
+                 "devops-gate", "cd-release", "cd-rollback", "env-prod"):
         assert f'id="{card}"' in page  # what the diagrams' links point at
     assert not GUID.search(page)
 
@@ -231,13 +232,23 @@ def test_the_architecture_file_holds_together() -> None:
         for e in ARCH[section]["edge"]:
             assert e["from"] in ids and e["to"] in ids, (section, e)
             assert e.get("kind", "data") in diagrams.EDGE_KINDS, (section, e)
-    for flow in ARCH["flow"]:
+    flows = ARCH["flow"] + ARCH["devops"]["flow"]  # Thalam's own flows, then CI to CD's
+    assert len({f["id"] for f in flows}) == len(flows)  # each is a link target on the page
+    for flow in flows:
         lanes = {lane for lane, _ in flow["lanes"]}
+        assert flow["trigger"] and flow["outcome"] and flow["phase"] is not None, flow["id"]
         for step in flow["steps"]:
             assert step["from"] in lanes and step["to"] in lanes, (flow["id"], step)
             assert step.get("kind", "call") in diagrams.STEP_KINDS
             assert step["note"], (flow["id"], step["label"])
-    assert {g["term"] for g in ARCH["glossary"]} >= {"Proposal", "Executor", "Brake line"}
+    # Rule 5: local, then staging, then prod, each saying where it runs, when, and what it gets.
+    envs = ARCH["devops"]["environment"]
+    assert [e["id"] for e in envs] == ["local", "staging", "prod"]
+    for e in envs:
+        assert e["where"] and e["runs"] and e["gets"] and e["phase"] is not None, e["id"]
+    assert all(row["part"] and row["kaval"] and row["thalam"] for row in ARCH["devops"]["kaval"])
+    assert {g["term"] for g in ARCH["glossary"]} >= {"Proposal", "Executor", "Brake line",
+                                                    "GitOps", "Rollback"}
 
 
 def test_every_placeholder_is_filled_from_guardrails_json() -> None:
