@@ -37,6 +37,7 @@ def test_nothing_is_built() -> None:
 
 def test_the_port_listens_on_localhost_only() -> None:
     assert POSTGRES["ports"] == ["127.0.0.1:5432:5432"]
+    assert "network_mode" not in POSTGRES  # host networking would bypass the binding
 
 
 def test_every_credential_must_be_set() -> None:
