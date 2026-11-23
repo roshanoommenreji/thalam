@@ -1,0 +1,30 @@
+# Thalam's Phase 1 stack: Postgres only (SPEC-002-R1, proved by scripts/dev/test_compose.py).
+#
+# Ollama and Langfuse join in Phase 2, their first user (ADR-0015). Nothing is built here, so
+# CLAUDE.md rule 2 (arm64 images) is not touched: the image is a multi-arch index pinned by digest,
+# the one Kaval runs and the one CI's test job uses. Compose reads .env itself for the ${...}
+# values; `:?` refuses to start while one is unset. The port listens on 127.0.0.1 only.
+
+name: thalam
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16-bookworm@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    stop_grace_period: 60s # time for a clean shutdown checkpoint
+    restart: unless-stopped
+
+volumes:
+  pgdata:
