@@ -53,16 +53,18 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done · `[-]` retired
 **Exit gate:** sandboxes reachable with read-only tokens; CI green on an empty package; the model
 deployment parked and `make azure-sweep` clean.
 
-## Phase 1 — The release graph, local · `[ ]`
+## Phase 1 — The release graph, local · `[~]`
 
-- [ ] Data model: `component`, `dependency`, `release`, `release_item`, `calendar_window`
-      (freeze/blackout), `check`, `check_result`, `proposal`, `decision`, `execution`,
-      `outcome`, `audit_event`; append-only like Kaval
+[SPEC-002](docs/specs/SPEC-002-phase-1-release-graph.md) (THL-27); its shape is ADR-0015.
+
+- [ ] Data model: `component`, `dependency`, `release`, `release_need`, `release_event`,
+      `release_item`, `calendar_window`. Releases, needs and events are written once, and the
+      database's grants enforce it
 - [ ] Components and dependencies loaded from Backstage `catalog-info.yaml` files
-- [ ] **A fixture company**: ~8 services across 4 teams with a real dependency web
-      (e.g. `web-shop → cart-api → pricing-svc → ledger-svc`), synthetic Jira data
-- [ ] Compose stack: Postgres + pgvector, gateway, Ollama, Langfuse
-- [ ] Dependency queries: upstream / downstream / release-order (topological sort)
+- [ ] **A fixture company**: 8 services across 4 teams with a real dependency web
+      (`web-shop → cart-api → pricing-svc → ledger-svc`), synthetic Jira data (`evals/company/`)
+- [ ] Compose stack: Postgres + pgvector only. Ollama and Langfuse move to Phase 2, their first user
+- [ ] Dependency queries: upstream / downstream / release order / what must ship first, and `make ask`
 
 **Exit gate:** "what must ship before `cart-api 2.3`?" answered from the database, no model.
 
@@ -81,6 +83,8 @@ deployment parked and `make azure-sweep` clean.
 - [ ] Tracing to Langfuse; token cost per conversation recorded
 - [ ] Eval harness: 20 golden release questions + 10 injection cases (Kaval ADR-0018, 0072),
       as a CI gate
+- [ ] Compose gains Ollama and Langfuse (moved from Phase 1, ADR-0015)
+- [ ] `audit_event` table
 
 **Exit gate:** evals pass; an injection planted in a Jira description changes nothing.
 
@@ -93,6 +97,7 @@ deployment parked and `make azure-sweep` clean.
 - [ ] Executor: **create Jira version** and **create ServiceNow change** (Change Management API),
       idempotent, with scoped bot accounts
 - [ ] LangGraph `interrupt()` → resume on the executor's recorded outcome
+- [ ] `proposal` → `decision` → `execution` → `outcome` tables
 
 **Exit gate:** a person approves in Slack; a Jira version and a ServiceNow change appear in the
 sandboxes; a denied proposal changes nothing.
@@ -104,6 +109,7 @@ sandboxes; a denied proposal changes nothing.
       change approved and inside its window; not in a freeze; rollback plan present
 - [ ] A readiness report per release, and a **go / no-go proposal**
 - [ ] Cross-release conflict detection (two dependent components in the same window)
+- [ ] `check`, `check_result` tables
 
 ## Phase 5 — Release notes and calendar · `[ ]`
 
