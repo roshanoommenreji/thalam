@@ -40,3 +40,31 @@ def test_a_missing_setting_names_itself(tmp_path: Path, monkeypatch: pytest.Monk
     with pytest.raises(MissingSetting) as caught:
         setting("THALAM_NOPE", tmp_path / "absent.env")
     assert caught.value.args[0] == "THALAM_NOPE"
+
+
+def test_dot_env_is_read_like_the_sandbox_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("A", "B", "C"):
+        monkeypatch.delenv(name, raising=False)
+    path = tmp_path / ".env"
+    path.write_text("export A=1\nB=\"x y\" # a note\nC='z' # note\n", encoding="utf-8-sig")
+    assert setting("A", path) == "1"
+    assert setting("B", path) == "x y"
+    assert setting("C", path) == "z"
+
+
+def test_an_empty_value_in_dot_env_counts_as_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("THALAM_EMPTY", raising=False)
+    with pytest.raises(MissingSetting) as caught:
+        setting("THALAM_EMPTY", _env_file(tmp_path, "THALAM_EMPTY=\n"))
+    assert caught.value.args[0] == "THALAM_EMPTY"
+
+
+def test_an_empty_environment_variable_does_not_hide_dot_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("THALAM_X", "")
+    assert setting("THALAM_X", _env_file(tmp_path, "THALAM_X=one\n")) == "one"
