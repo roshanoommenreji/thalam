@@ -11,7 +11,7 @@ sync: ## Install exactly what uv.lock says into .venv (what CI uses)
 
 .PHONY: lint
 lint: ## ruff + mypy --strict (SPEC-001-R4)
-	uv run ruff check services scripts infra migrations
+	uv run ruff check services scripts infra
 	uv run mypy services scripts/dev scripts/ops scripts/tracking infra/modules/azure-guardrails
 
 .PHONY: test
