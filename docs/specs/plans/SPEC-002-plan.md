@@ -129,7 +129,7 @@ same one Kaval pins. The graph walk uses stdlib `graphlib`.
 **Files:** none in the repo; the scratchpad's `thl_jira.py` and `thl_backlog.py` (Roshan's own
 token, never printed).
 
-- [ ] **Step 1: Create one story per task under THL-2, in task order.** Use labels `phase-1` and
+- [x] **Step 1: Create one story per task under THL-2, in task order.** Use labels `phase-1` and
       the area (`tooling`, `data`, `graph` or `docs`), and give each a "What" and a "Done when"
       taken from its task below:
 
@@ -148,12 +148,12 @@ token, never printed).
 | 11 | make ask: the release graph from the command line (SPEC-002-R12) |
 | 12 | Lab 01 and the Phase 1 docs (SPEC-002-R15, ADR-0015) |
 
-- [ ] **Step 2: Record the keys** in this plan's task headings (`Task 1 · THL-<n>`), in a docs
+- [x] **Step 2: Record the keys** in this plan's task headings (`Task 1 · THL-<n>`), in a docs
       commit on the Task 1 branch.
 
 ---
 
-### Task 1: Phase 1 packages, the collector package, settings by name
+### Task 1 · THL-28: Phase 1 packages, the collector package, settings by name
 
 **Files:**
 - Modify: `pyproject.toml`, `uv.lock`, `Makefile` (the `lint` target), `ROADMAP.md` (Phase 1)
@@ -327,7 +327,7 @@ pythonpath = ["scripts/dev", "scripts/ops", "scripts/tracking"]
 
 ---
 
-### Task 2: Postgres in compose, the same image in CI (SPEC-002-R1)
+### Task 2 · THL-29: Postgres in compose, the same image in CI (SPEC-002-R1)
 
 **Files:**
 - Create: `compose.yaml`, `scripts/dev/test_compose.py`
@@ -464,7 +464,7 @@ db-down: ## Stop Postgres; its data volume stays (docker compose down -v would d
 
 ---
 
-### Task 3: The release-graph schema and the database test guard (SPEC-002-R2, R14)
+### Task 3 · THL-30: The release-graph schema and the database test guard (SPEC-002-R2, R14)
 
 **Files:**
 - Create:
@@ -1139,7 +1139,7 @@ migrate: ## Apply the migrations as the owner, then run `make db-roles` (SPEC-00
 
 ---
 
-### Task 4: Two database roles (SPEC-002-R3)
+### Task 4 · THL-31: Two database roles (SPEC-002-R3)
 
 **Files:**
 - Create: `scripts/ops/db-roles.sql`, `scripts/ops/db_roles.py`
@@ -1426,7 +1426,7 @@ db-roles: ## Create or update thalam_loader and thalam_reader, after every migra
 
 ---
 
-### Task 5: The graph queries (SPEC-002-R9, R10, R11)
+### Task 5 · THL-32: The graph queries (SPEC-002-R9, R10, R11)
 
 **Files:**
 - Create: `services/shared/thalam_shared/graph.py`
@@ -1873,7 +1873,7 @@ def release_order(g: Graph) -> list[Release]:
 
 ---
 
-### Task 6: The Backstage catalog reader (SPEC-002-R4)
+### Task 6 · THL-33: The Backstage catalog reader (SPEC-002-R4)
 
 **Files:**
 - Create: `services/collector/thalam_collector/problems.py`,
@@ -2178,7 +2178,7 @@ def read_catalog(root: Path) -> tuple[Catalog, list[Problem]]:
 
 ---
 
-### Task 7: Release manifests, Jira files and the calendar (SPEC-002-R5, R6)
+### Task 7 · THL-34: Release manifests, Jira files and the calendar (SPEC-002-R5, R6)
 
 **Files:**
 - Create: `services/collector/thalam_collector/company.py`
@@ -2719,7 +2719,7 @@ def to_graph(company: Company) -> graph.Graph:
 
 ---
 
-### Task 8: The loader: mirrors follow the files, history is written once (SPEC-002-R4, R6, R7)
+### Task 8 · THL-35: The loader: mirrors follow the files, history is written once (SPEC-002-R4, R6, R7)
 
 **Files:**
 - Create: `services/collector/thalam_collector/load.py`,
@@ -3190,7 +3190,7 @@ load: ## Load the fixture company as thalam_loader; writes nothing on any proble
 
 ---
 
-### Task 9: The fixture company (SPEC-002-R13)
+### Task 9 · THL-36: The fixture company (SPEC-002-R13)
 
 **Files:**
 - Create:
@@ -3733,7 +3733,7 @@ windows:
 
 ---
 
-### Task 10: Read the graph from Postgres as the reader (SPEC-002-R8)
+### Task 10 · THL-37: Read the graph from Postgres as the reader (SPEC-002-R8)
 
 **Files:**
 - Create: `services/shared/thalam_shared/graph_read.py`
@@ -3826,7 +3826,7 @@ def load_graph(session: Session) -> graph.Graph:
 
 ---
 
-### Task 11: make ask (SPEC-002-R12)
+### Task 11 · THL-38: make ask (SPEC-002-R12)
 
 **Files:**
 - Create: `services/shared/thalam_shared/ask.py`
@@ -4102,7 +4102,7 @@ ask: ## Ask the release graph, e.g. make ask Q="before cart-api 2.3" (SPEC-002-R
 
 ---
 
-### Task 12: Lab 01 and the Phase 1 docs (SPEC-002-R15, ADR-0015)
+### Task 12 · THL-39: Lab 01 and the Phase 1 docs (SPEC-002-R15, ADR-0015)
 
 **Files:**
 - Create: `docs/labs/01-release-graph.md`, `docs/adr/0015-phase-1-shape.md`
