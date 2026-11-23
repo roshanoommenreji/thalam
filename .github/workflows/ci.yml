@@ -1,5 +1,6 @@
 # CI: every pull request, and main after each merge (SPEC-001; copied from Kaval's ci.yml).
 # covers: SPEC-001-R4, SPEC-001-R6
+# covers: SPEC-002-R2, SPEC-002-R14
 #
 # Supply-chain hygiene, as in Kaval: every third-party action is pinned to a full commit SHA (the
 # tag is a comment), the gitleaks binary is checked against the sha256 below, the token is
@@ -66,6 +67,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -h 127.0.0.1 -U thalam -d thalam"
           --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: thalam
+      POSTGRES_USER: thalam
+      POSTGRES_PASSWORD: ci-only-not-a-secret
+      THALAM_REQUIRE_DB: "1" # a database test that cannot connect fails here, never skips (SPEC-002-R14)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,6 +83,12 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           enable-cache: true
       - run: uv sync --locked --all-extras
+      - name: migrations apply from empty
+        run: uv run alembic upgrade head
+      - name: models and migrations agree (no drift)
+        run: uv run alembic check
+      - name: migrations reverse cleanly, then re-apply
+        run: uv run alembic downgrade base && uv run alembic upgrade head
       - run: uv run pytest -ra
       - name: spec coverage (job summary, SPEC-001-R8)
         run: uv run python scripts/dev/spec_coverage.py
