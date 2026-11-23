@@ -32,6 +32,14 @@ secrets-scan: ## gitleaks over the whole history
 sandboxes: ## Prove read-only access to every sandbox (reads .env; SPEC-001-R10..R13)
 	uv run python scripts/dev/check_sandboxes.py
 
+.PHONY: db-up
+db-up: ## Start Postgres in Docker on 127.0.0.1 (SPEC-002-R1; compose reads .env)
+	docker compose up -d --wait postgres
+
+.PHONY: db-down
+db-down: ## Stop Postgres; its data volume stays (docker compose down -v would drop it)
+	docker compose down
+
 # ─── Azure guardrails (ADR-0014). Nothing below reads .env as shell; see scripts/ops/tf.py ───
 
 .PHONY: guardrails-plan
