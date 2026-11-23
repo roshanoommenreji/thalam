@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Approved:** Roshan, 2026-11-23. Execution: subagent-driven
+(`superpowers:subagent-driven-development`), one fresh agent per task, each followed by a spec
+review and a code review.
+
 **Goal:** answer "what must ship before `cart-api 2.3`?" from Postgres, with no model, by building
 [SPEC-002](../SPEC-002-phase-1-release-graph.md)'s requirements R1–R15.
 
