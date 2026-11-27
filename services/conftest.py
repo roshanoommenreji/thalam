@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import NoReturn
 
 import pytest
-from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import DBAPIError
@@ -46,7 +45,8 @@ def migrated_engine() -> Engine:
             version = probe.execute(text("SELECT version_num FROM alembic_version")).scalar()
     except (DBAPIError, MissingSetting) as exc:
         no_database(f"no reachable, migrated Postgres: {type(exc).__name__}")
-    head = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini"))).get_current_head()
+    # Not from_config: alembic.ini's prepend_sys_path would put "." on this process's sys.path.
+    head = ScriptDirectory(str(ROOT / "migrations")).get_current_head()
     if version != head:
         no_database("Postgres is not at the migration head: run make migrate")
     return owner
