@@ -25,14 +25,14 @@ BEGIN
     BEGIN
       EXECUTE format('CREATE ROLE thalam_loader LOGIN PASSWORD %L',
                      current_setting('thalam.loader_verifier'));
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       RAISE EXCEPTION USING ERRCODE = SQLSTATE, MESSAGE = 'thalam_loader: ' || SQLERRM;
     END;
   ELSE
     BEGIN
       EXECUTE format('ALTER ROLE thalam_loader LOGIN PASSWORD %L',
                      current_setting('thalam.loader_verifier'));
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       RAISE EXCEPTION USING ERRCODE = SQLSTATE, MESSAGE = 'thalam_loader: ' || SQLERRM;
     END;
   END IF;
@@ -40,14 +40,14 @@ BEGIN
     BEGIN
       EXECUTE format('CREATE ROLE thalam_reader LOGIN PASSWORD %L',
                      current_setting('thalam.reader_verifier'));
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       RAISE EXCEPTION USING ERRCODE = SQLSTATE, MESSAGE = 'thalam_reader: ' || SQLERRM;
     END;
   ELSE
     BEGIN
       EXECUTE format('ALTER ROLE thalam_reader LOGIN PASSWORD %L',
                      current_setting('thalam.reader_verifier'));
-    EXCEPTION WHEN OTHERS THEN
+    EXCEPTION WHEN query_canceled OR OTHERS THEN
       RAISE EXCEPTION USING ERRCODE = SQLSTATE, MESSAGE = 'thalam_reader: ' || SQLERRM;
     END;
   END IF;

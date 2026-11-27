@@ -5,8 +5,9 @@ Runs scripts/ops/db-roles.sql as the owner. THALAM_LOADER_PASSWORD and THALAM_RE
 come from the environment, then .env. What is guaranteed about them:
   - the plaintext never leaves this process: libpq computes each SCRAM-SHA-256 verifier here, and
     only the verifier is sent, as a bound parameter, and put in the statements the server logs;
-  - the SQL keeps its statement text out of its errors (see db-roles.sql);
-  - main() prints only the error's class name and SQLSTATE, never the message or a traceback.
+  - the script keeps statement text out of the errors it raises (see db-roles.sql);
+  - main() prints the error's class, its SQLSTATE and Postgres's primary message, which never
+    includes the statement, and no traceback.
 """
 
 from __future__ import annotations
@@ -54,12 +55,14 @@ def main() -> int:
         print("Postgres is not reachable: run `make db-up`, then `make migrate`", file=sys.stderr)
         return 1
     except (DBAPIError, psycopg.Error) as exc:
-        # Never the message: it can hold SQL text. The class and the SQLSTATE say enough.
+        # Not str(exc): that carries CONTEXT, which can hold SQL text. message_primary never does.
         original = exc.orig if isinstance(exc, DBAPIError) else exc
         state = getattr(original, "sqlstate", None)
+        diag = getattr(original, "diag", None)
+        message = (diag.message_primary if diag is not None else None) or ""
         hint = ": run `make migrate` first" if state == "42P01" else ""
-        print(f"db-roles failed: {type(original).__name__}, SQLSTATE {state}{hint}",
-              file=sys.stderr)
+        print(f"db-roles failed: {type(original).__name__}, SQLSTATE {state}{hint}"
+              f"{': ' + message if message else ''}", file=sys.stderr)
         return 1
     print("roles ready: thalam_loader, thalam_reader")
     return 0

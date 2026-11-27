@@ -136,6 +136,9 @@ def test_a_failing_script_leaves_no_password_in_the_error(as_role: Switch) -> No
         as_role("thalam_reader")
         db_roles.apply(db.connection(), "leak-probe-loader", "leak-probe-reader")
     as_role(None)
+    # Pin the cause: an unrelated earlier failure would also leave no password in its message.
+    assert caught.value.sqlstate == "42501"  # insufficient_privilege: the reader cannot ALTER ROLE
+    assert (caught.value.diag.message_primary or "").startswith("thalam_loader: ")
     message = str(caught.value)
     assert "leak-probe" not in message
     assert "SCRAM-SHA-256$" not in message
@@ -153,10 +156,13 @@ def test_each_role_can_log_in(migrated_engine: Engine) -> None:
                 if role == "reader":
                     assert connection.execute(
                         text("SHOW default_transaction_read_only")).scalar() == "on"
-                    with pytest.raises(DBAPIError) as refused:
-                        connection.execute(text("CREATE TEMP TABLE t (x int)"))
-                    assert getattr(refused.value.orig, "sqlstate", None) in ("25006", "42501")
-                    connection.rollback()
+                with pytest.raises(DBAPIError) as refused:
+                    connection.execute(text("CREATE TEMP TABLE t (x int)"))
+                state = getattr(refused.value.orig, "sqlstate", None)
+                # The reader is refused as read-only first (25006); only the loader, which is
+                # not read-only, proves the REVOKE of TEMPORARY from PUBLIC: exactly 42501.
+                assert state in ("25006", "42501") if role == "reader" else state == "42501"
+                connection.rollback()
         except MissingSetting as exc:
             pytest.fail(f"set {exc.args[0]} in .env (see .env.example)")
         except OperationalError:
