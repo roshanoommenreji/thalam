@@ -82,7 +82,10 @@ ROLES = ("thalam_loader", "thalam_reader")
 @pytest.fixture
 def as_role(db: Session) -> Callable[[str | None], Session]:
     """The real roles script, applied inside the test's transaction (rolled back with it); then
-    `as_role("thalam_reader")` acts as that role until `as_role(None)` returns to the owner."""
+    `as_role("thalam_reader")` acts as that role until `as_role(None)` returns to the owner.
+
+    If the code under test calls session.rollback(), the savepoint rollback undoes SET LOCAL ROLE
+    and later statements run as the owner: a test must not rely on a rollback inside a switch."""
     db_roles.apply(db.connection(), "test-loader", "test-reader")
 
     def switch(role: str | None) -> Session:
