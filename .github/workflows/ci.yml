@@ -73,6 +73,8 @@ jobs:
       POSTGRES_DB: thalam
       POSTGRES_USER: thalam
       POSTGRES_PASSWORD: ci-only-not-a-secret
+      THALAM_LOADER_PASSWORD: ci-only-loader
+      THALAM_READER_PASSWORD: ci-only-reader
       THALAM_REQUIRE_DB: "1" # a database test that cannot connect fails here, never skips (SPEC-002-R14)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +91,8 @@ jobs:
         run: uv run alembic check
       - name: migrations reverse cleanly, then re-apply
         run: uv run alembic downgrade base && uv run alembic upgrade head
+      - name: database roles (SPEC-002-R3)
+        run: uv run python scripts/ops/db_roles.py
       - run: uv run pytest -ra
       - name: spec coverage (job summary, SPEC-001-R8)
         run: uv run python scripts/dev/spec_coverage.py

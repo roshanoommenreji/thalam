@@ -44,6 +44,10 @@ db-down: ## Stop Postgres; its data volume stays (docker compose down -v would d
 migrate: ## Apply the migrations as the owner, then run `make db-roles` (SPEC-002-R2)
 	uv run alembic upgrade head
 
+.PHONY: db-roles
+db-roles: ## Create or update thalam_loader and thalam_reader, after every migrate (SPEC-002-R3)
+	uv run python scripts/ops/db_roles.py
+
 # ─── Azure guardrails (ADR-0014). Nothing below reads .env as shell; see scripts/ops/tf.py ───
 
 .PHONY: guardrails-plan

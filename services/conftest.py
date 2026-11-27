@@ -9,10 +9,11 @@ never vanish from a green run (Kaval KAV-24).
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NoReturn
 
+import db_roles
 import pytest
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, text
@@ -73,3 +74,23 @@ def db(migrated_engine: Engine) -> Iterator[Session]:
     finally:
         transaction.rollback()
         connection.close()
+
+
+ROLES = ("thalam_loader", "thalam_reader")
+
+
+@pytest.fixture
+def as_role(db: Session) -> Callable[[str | None], Session]:
+    """The real roles script, applied inside the test's transaction (rolled back with it); then
+    `as_role("thalam_reader")` acts as that role until `as_role(None)` returns to the owner.
+
+    If the code under test calls session.rollback(), the savepoint rollback undoes SET LOCAL ROLE
+    and later statements run as the owner: a test must not rely on a rollback inside a switch."""
+    db_roles.apply(db.connection(), "test-loader", "test-reader")
+
+    def switch(role: str | None) -> Session:
+        assert role is None or role in ROLES
+        db.execute(text("RESET ROLE" if role is None else f"SET LOCAL ROLE {role}"))
+        return db
+
+    return switch
