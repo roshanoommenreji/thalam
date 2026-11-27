@@ -15,6 +15,8 @@ if context.is_offline_mode():
     raise SystemExit("offline (--sql) migrations are not used; run them against a database")
 
 with engine("owner").connect() as connection:
-    context.configure(connection=connection, target_metadata=Base.metadata)
+    context.configure(
+        connection=connection, target_metadata=Base.metadata, compare_server_default=True
+    )
     with context.begin_transaction():
         context.run_migrations()

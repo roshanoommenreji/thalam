@@ -43,6 +43,10 @@ def database_url(role: Role) -> URL:
 @lru_cache
 def engine(role: Role) -> Engine:
     # A bounded connect_timeout: without one, a Postgres that is down hangs for minutes (Kaval).
+    # hide_parameters: errors otherwise print bound values (role passwords, untrusted text).
     return create_engine(
-        database_url(role), pool_pre_ping=True, connect_args={"connect_timeout": 5}
+        database_url(role),
+        pool_pre_ping=True,
+        hide_parameters=True,
+        connect_args={"connect_timeout": 5},
     )

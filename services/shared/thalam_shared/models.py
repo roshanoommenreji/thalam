@@ -82,7 +82,7 @@ class ReleaseNeed(Base):
 class ReleaseEvent(Base):
     __tablename__ = "release_event"
     __table_args__ = (
-        UniqueConstraint("release_id", "kind", "at"),
+        UniqueConstraint("release_id", "at"),
         CheckConstraint("kind IN ('state', 'replan')", name="kind"),
         CheckConstraint(f"state IS NULL OR state IN ({STATE_LIST})", name="state"),
         CheckConstraint(

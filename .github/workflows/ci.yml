@@ -68,7 +68,7 @@ jobs:
           --health-cmd "pg_isready -h 127.0.0.1 -U thalam -d thalam"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      POSTGRES_HOST: localhost
+      POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       POSTGRES_DB: thalam
       POSTGRES_USER: thalam

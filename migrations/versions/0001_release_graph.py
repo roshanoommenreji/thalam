@@ -100,8 +100,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["release_id"], ["release.id"],
                                 name=op.f("fk_release_event_release_id_release")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_release_event")),
-        sa.UniqueConstraint("release_id", "kind", "at",
-                            name=op.f("uq_release_event_release_id_kind_at")),
+        sa.UniqueConstraint("release_id", "at", name=op.f("uq_release_event_release_id_at")),
     )
     op.create_table(
         "release_item",
