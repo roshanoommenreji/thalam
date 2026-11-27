@@ -11,7 +11,7 @@ sync: ## Install exactly what uv.lock says into .venv (what CI uses)
 
 .PHONY: lint
 lint: ## ruff + mypy --strict (SPEC-001-R4)
-	uv run ruff check services scripts infra
+	uv run ruff check services scripts infra migrations
 	uv run mypy services scripts/dev scripts/ops scripts/tracking infra/modules/azure-guardrails
 
 .PHONY: test
@@ -39,6 +39,10 @@ db-up: ## Start Postgres in Docker on 127.0.0.1 (SPEC-002-R1; compose reads .env
 .PHONY: db-down
 db-down: ## Stop Postgres; its data volume stays (docker compose down -v would drop it)
 	docker compose down
+
+.PHONY: migrate
+migrate: ## Apply the migrations as the owner, then run `make db-roles` (SPEC-002-R2)
+	uv run alembic upgrade head
 
 # ─── Azure guardrails (ADR-0014). Nothing below reads .env as shell; see scripts/ops/tf.py ───
 
