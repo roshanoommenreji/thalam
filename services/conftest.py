@@ -94,3 +94,92 @@ def as_role(db: Session) -> Callable[[str | None], Session]:
         return db
 
     return switch
+
+
+MINIMAL = {
+    "catalog/team.yaml": """\
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata: {name: team-a}
+spec: {type: team}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata: {name: api, description: The API.}
+spec: {type: service, lifecycle: production, owner: group:team-a, dependsOn: ["component:db-svc"]}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata: {name: db-svc}
+spec: {type: service, lifecycle: production, owner: team-a}
+""",
+    "releases/api.yaml": """\
+component: api
+releases:
+  - version: 1.0.0
+    window: [2026-10-01, 2026-10-01]
+    events:
+      - planned 2026-09-01T10:00:00+05:30
+      - scoped 2026-09-02T10:00:00+05:30
+      - ready 2026-09-03T10:00:00+05:30
+      - change_approved 2026-09-04T10:00:00+05:30
+      - deploying 2026-10-01T09:00:00+05:30
+      - verifying 2026-10-01T09:30:00+05:30
+      - released 2026-10-01T11:00:00+05:30
+  - version: 1.1.0
+    window: [2026-12-01, 2026-12-01]
+    needs: {db-svc: ">=2.0.0"}
+    events:
+      - planned 2026-11-10T10:00:00+05:30
+""",
+    "releases/db-svc.yaml": """\
+component: db-svc
+releases:
+  - version: 2.0.0
+    window: [2026-11-20, 2026-11-20]
+    events:
+      - planned 2026-11-01T10:00:00+05:30
+      - scoped 2026-11-02T10:00:00+05:30
+""",
+    "jira/versions.json": (
+        '[{"self": "https://xxxx.atlassian.net/rest/api/3/version/1", "id": "1",'
+        ' "name": "api 1.0.0", "released": true},\n'
+        ' {"id": "2", "name": "api 1.1.0", "released": false},\n'
+        ' {"id": "3", "name": "db-svc 2.0.0", "released": false}]\n'
+    ),
+    "jira/search.json": (
+        '{"issues": [{"key": "API-1", "fields": {"summary": "Call the new db endpoint",'
+        ' "status": {"name": "In Progress"},'
+        ' "fixVersions": [{"id": "2", "name": "api 1.1.0"}]}}]}\n'
+    ),
+    "calendar.yaml": (
+        "windows:\n"
+        "  - {name: year-end freeze, kind: freeze, starts: 2026-12-19, ends: 2027-01-04}\n"
+    ),
+}
+
+
+@pytest.fixture
+def company_tree(tmp_path: Path) -> Callable[..., Path]:
+    """make(replace={file: (old, new)}, files={file: text or None}) -> a fresh company folder."""
+    count = 0
+
+    def make(replace: dict[str, tuple[str, str]] | None = None,
+             files: dict[str, str | None] | None = None) -> Path:
+        nonlocal count
+        count += 1
+        root = tmp_path / f"company{count}"
+        contents: dict[str, str | None] = dict(MINIMAL)
+        for name, (old, new) in (replace or {}).items():
+            text = contents[name]
+            assert text is not None and old in text, (name, old)
+            contents[name] = text.replace(old, new, 1)
+        contents.update(files or {})
+        for name, text in contents.items():
+            if text is not None:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+        return root
+
+    return make

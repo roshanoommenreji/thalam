@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from thalam_collector.files import read_yaml
 from thalam_collector.problems import Problem
+from thalam_collector.text import flatten
 
 _NAME_PART = r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*"  # Backstage's rule, written once
 NAME = rf"^{_NAME_PART}$"  # at most 63 characters, checked beside it
@@ -25,8 +26,6 @@ REF = re.compile(  # "component:name", "component:default/name" or "name"; use f
     rf"(?:(?P<kind>[A-Za-z]+):)?(?:default/)?(?P<name>{_NAME_PART})"
 )
 DESCRIPTION_CAP = 1000
-# Control characters, lone surrogates, line separators and whitespace all become one space.
-_FLATTEN = re.compile(r"[\x00-\x1f\x7f-\x9f\ud800-\udfff  \s]+")
 _SPELT = {"component": "Component", "group": "Group"}
 
 
@@ -44,7 +43,7 @@ class _Metadata(BaseModel):
             return ""
         if not isinstance(value, str):
             return value
-        return _FLATTEN.sub(" ", value).strip()[:DESCRIPTION_CAP].rstrip()
+        return flatten(value, DESCRIPTION_CAP)
 
 
 class _ComponentSpec(BaseModel):
@@ -93,8 +92,12 @@ def pydantic_problems(file: str, prefix: str, exc: ValidationError) -> list[Prob
     """One Problem per Pydantic error, located as "prefix.field[i]"."""
     out = []
     for error in exc.errors():
-        loc = "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in error["loc"])
-        out.append(Problem(file, (prefix + loc).lstrip("."), error["msg"]))
+        # A key a file invents (an extra field) is part of loc: flatten it, it is printed.
+        loc = "".join(f"[{p}]" if isinstance(p, int) else f".{flatten(str(p), 60)}"
+                      for p in error["loc"])
+        # Dates are read strictly, so a quoted one fails here: say what to change.
+        hint = " (write the date unquoted, as YYYY-MM-DD)" if error["type"] == "date_type" else ""
+        out.append(Problem(file, (prefix + loc).lstrip(".") or "(file)", error["msg"] + hint))
     return out
 
 
