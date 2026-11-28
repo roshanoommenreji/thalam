@@ -13,20 +13,20 @@ Jira's shapes keep only the fields Thalam reads, as the real API sends many more
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from thalam_shared import graph
 from thalam_shared.lifecycle import NOT_IN_FLIGHT, STATES, Event, allowed, current
 
 from thalam_collector.catalog import Catalog, pydantic_problems, read_catalog
+from thalam_collector.files import read_json, read_yaml
 from thalam_collector.problems import LoadError, Problem
+from thalam_collector.text import flatten, shown
 
 SUMMARY_CAP = 255
 STATUS_CAP = 64
@@ -137,39 +137,67 @@ class Company:
     warnings: tuple[str, ...]
 
 
+_FAILED: Any = object()  # what _read returns when it has already filed the problem
+
+
 def _read(root: Path, rel: str, problems: list[Problem]) -> Any:
+    """The one document in a file, or _FAILED after adding why to `problems`.
+
+    Both readers are the hardened ones in thalam_collector.files: nothing in a file can raise out
+    of this function, and no problem quotes the file.
+    """
     path = root / rel
     if not path.is_file():
         problems.append(Problem(rel, "(file)", "the file is missing"))
-        return None
-    text = path.read_text(encoding="utf-8")
-    try:
-        return json.loads(text) if rel.endswith(".json") else yaml.safe_load(text)
-    except (json.JSONDecodeError, yaml.YAMLError) as exc:
-        first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
-        kind = rel.rsplit(".", 1)[1].upper()
-        problems.append(Problem(rel, "(file)", f"not valid {kind}: {first!r}"))
-        return None
+        return _FAILED
+    if rel.endswith(".json"):
+        value, found = read_json(path, rel)
+        problems += found
+        return _FAILED if found else value
+    docs, found = read_yaml(path, rel)
+    problems += found
+    if found:
+        return _FAILED
+    if not docs:
+        problems.append(Problem(rel, "(file)", "the file is empty"))
+        return _FAILED
+    if len(docs) > 1:
+        problems.append(Problem(rel, "(file)", "one document per file"))
+        return _FAILED
+    return docs[0]
+
+
+def _unknown(name: str, known: set[str]) -> str:
+    """Names are exact (our own files fail closed), but a different case earns a hint."""
+    message = f"no component named {shown(name)} in the catalog"
+    near = sorted(k for k in known if k.casefold() == name.casefold())
+    return f"{message} (did you mean {shown(near[0])}?)" if near else message
 
 
 def _event(line: str, window: tuple[date, date]) -> Event:
     match = EVENT.match(line)
     if not match:
         raise ValueError("expected '<state> <time>' or 'replan <time> <start> <end>'")
-    at = datetime.fromisoformat(match["at"])
+    try:
+        at = datetime.fromisoformat(match["at"])
+    except ValueError:
+        raise ValueError("the time is not an ISO 8601 date and time with a UTC offset") from None
     if at.tzinfo is None:
         raise ValueError("the time needs its UTC offset, such as +05:30")
     if match["state"] == "replan":
         if not match["start"]:
             raise ValueError("a replan names its new window: replan <time> <start> <end>")
-        new = (date.fromisoformat(match["start"]), date.fromisoformat(match["end"]))
+        try:
+            new = (date.fromisoformat(match["start"]), date.fromisoformat(match["end"]))
+        except ValueError:
+            raise ValueError("a replan's window dates must be YYYY-MM-DD") from None
         if new[1] < new[0]:
             raise ValueError("the window ends before it starts")
         return Event("replan", at, None, new)
     if match["start"]:
         raise ValueError("only a replan names a window")
     if match["state"] not in STATES:
-        raise ValueError(f"unknown state {match['state']!r}")
+        raise ValueError(f"unknown state {shown(match['state'])}")
     return Event("state", at, match["state"], window if match["state"] == "planned" else None)
 
 
@@ -179,7 +207,7 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
         if graph.parse_version(doc.version) != doc.version:
             raise ValueError
     except ValueError:
-        problems.append(Problem(rel, f"{where}.version", f"{doc.version!r} is not X.Y.Z"))
+        problems.append(Problem(rel, f"{where}.version", f"{shown(doc.version)} is not X.Y.Z"))
     if doc.window[1] < doc.window[0]:
         problems.append(Problem(rel, f"{where}.window", "the window ends before it starts"))
     needs = []
@@ -188,11 +216,12 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
         if name == component:
             problems.append(Problem(rel, field, "a release cannot need its own component"))
         elif name not in known:
-            problems.append(Problem(rel, field, f"no component named {name!r} in the catalog"))
+            problems.append(Problem(rel, field, _unknown(name, known)))
         try:
             graph.parse_range(spec)
-        except ValueError as exc:
-            problems.append(Problem(rel, field, str(exc)))
+        except ValueError:  # its own message quotes the whole text, so ours is capped
+            problems.append(Problem(rel, field, f"not a version range: {shown(spec)} "
+                                                "(use >=, >, <=, <, == or !=)"))
         needs.append((name, spec))
     events: list[Event] = []
     state: str | None = None
@@ -219,40 +248,65 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
     return ReleaseRecord(component, doc.version, tuple(needs), tuple(events), rel)
 
 
-def _releases(root: Path, catalog: Catalog, problems: list[Problem]) -> list[ReleaseRecord]:
+def _releases(root: Path, catalog: Catalog, problems: list[Problem]
+              ) -> tuple[list[ReleaseRecord], set[str], bool]:
+    """The release records, the components whose manifest failed, and whether no manifest was read.
+
+    A failed manifest is one cause: the Jira files must not also complain about its versions.
+    """
     known = {c.name for c in catalog.components}
     records: list[ReleaseRecord] = []
+    failed: set[str] = set()
     seen: set[tuple[str, str]] = set()
-    for path in sorted((root / "releases").glob("*.yaml")):
-        rel = path.relative_to(root).as_posix()
-        data = _read(root, rel, problems)
-        if data is None:
+    read_any = False
+    folder = root / "releases"
+    for path in sorted(folder.iterdir(), key=lambda p: p.name) if folder.is_dir() else []:
+        if not path.is_file():
             continue
+        rel = path.relative_to(root).as_posix()
+        if path.suffix.lower() == ".yml":
+            problems.append(Problem(rel, "(file)", "only .yaml files are read: rename it to .yaml"))
+            failed.add(path.stem)
+            continue
+        if path.suffix.lower() != ".yaml":
+            continue
+        read_any = True
+        data = _read(root, rel, problems)
+        if data is _FAILED:
+            failed.add(path.stem)
+            continue
+        names = {path.stem}  # a manifest is named for its component, but only by habit
+        if isinstance(data, dict) and isinstance(data.get("component"), str):
+            names.add(data["component"])
         try:
             manifest = _Manifest.model_validate(data)
         except ValidationError as exc:
             problems += pydantic_problems(rel, "", exc)
+            failed |= names
             continue
         if manifest.component not in known:
-            problems.append(Problem(rel, "component",
-                                    f"no component named {manifest.component!r} in the catalog"))
+            problems.append(Problem(rel, "component", _unknown(manifest.component, known)))
+            failed |= names
             continue
         for i, doc in enumerate(manifest.releases):
             where = f"releases[{i}]"
             key = (manifest.component, doc.version)
             if key in seen:
-                problems.append(Problem(rel, f"{where}.version",
-                                        f"{manifest.component} {doc.version} is defined twice"))
+                label = flatten(f"{manifest.component} {doc.version}", 80)
+                problems.append(Problem(rel, f"{where}.version", f"{label} is defined twice"))
                 continue
             seen.add(key)
             records.append(_release(rel, where, manifest.component, doc, known, problems))
-    return records
+    if not read_any:
+        problems.append(Problem("releases/", "(folder)", "no release manifests"))
+    return records, failed, not read_any
 
 
-def _jira(root: Path, records: list[ReleaseRecord], problems: list[Problem]
-          ) -> tuple[list[ReleaseRecord], list[ItemRecord]]:
+def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_read: bool,
+          problems: list[Problem]) -> tuple[list[ReleaseRecord], list[ItemRecord]]:
     by_label = {f"{r.component} {r.version}": r for r in records}
     ids: dict[str, ReleaseRecord] = {}
+    skipped: set[str] = set()  # Jira ids of versions whose manifest failed: already one problem
     data = _read(root, "jira/versions.json", problems)
     if isinstance(data, list):
         for i, raw in enumerate(data):
@@ -263,19 +317,23 @@ def _jira(root: Path, records: list[ReleaseRecord], problems: list[Problem]
                 continue
             record = by_label.get(version.name)
             if record is None:
+                if nothing_read or version.name.rpartition(" ")[0] in failed:
+                    skipped.add(version.id)
+                    continue
                 problems.append(Problem("jira/versions.json", f"[{i}].name",
-                                        f"{version.name!r} names no release in the manifests"))
+                                        f"{shown(version.name)} names no release in the manifests"))
             elif version.id in ids or record.jira_version_id is not None:
                 problems.append(Problem("jira/versions.json", f"[{i}]",
                                         "a Jira version is listed twice"))
             else:
                 updated = replace(record, jira_version_id=version.id)
                 by_label[version.name] = ids[version.id] = updated
-    elif data is not None:
+    elif data is not _FAILED:
         problems.append(Problem("jira/versions.json", "(file)", "expected a list of versions"))
     items: list[ItemRecord] = []
+    listed: set[tuple[str, str, str]] = set()
     data = _read(root, "jira/search.json", problems)
-    if data is not None:
+    if data is not _FAILED:
         try:
             search = _JiraSearch.model_validate(data)
         except ValidationError as exc:
@@ -283,21 +341,28 @@ def _jira(root: Path, records: list[ReleaseRecord], problems: list[Problem]
         else:
             for i, issue in enumerate(search.issues):
                 for j, fix in enumerate(issue.fields.fixVersions):
+                    where = f"issues[{i}].fields.fixVersions[{j}]"
                     owner = ids.get(fix.id)
                     if owner is None:
-                        problems.append(Problem("jira/search.json",
-                                                f"issues[{i}].fields.fixVersions[{j}]",
-                                                f"no Jira version with id {fix.id!r}"))
+                        if fix.id not in skipped:
+                            problems.append(Problem("jira/search.json", where,
+                                                    f"no Jira version with id {shown(fix.id)}"))
                         continue
+                    if (owner.component, owner.version, issue.key) in listed:
+                        label = flatten(f"{owner.component} {owner.version}", 80)
+                        problems.append(Problem("jira/search.json", where,
+                                                f"{issue.key} is listed twice for {label}"))
+                        continue
+                    listed.add((owner.component, owner.version, issue.key))
                     items.append(ItemRecord(owner.component, owner.version, issue.key,
-                                            issue.fields.summary[:SUMMARY_CAP],
-                                            issue.fields.status.name[:STATUS_CAP]))
+                                            flatten(issue.fields.summary, SUMMARY_CAP),
+                                            flatten(issue.fields.status.name, STATUS_CAP)))
     return list(by_label.values()), items
 
 
 def _windows(root: Path, problems: list[Problem]) -> list[WindowRecord]:
     data = _read(root, "calendar.yaml", problems)
-    if data is None:
+    if data is _FAILED:
         return []
     try:
         calendar = _Calendar.model_validate(data)
@@ -305,14 +370,16 @@ def _windows(root: Path, problems: list[Problem]) -> list[WindowRecord]:
         problems += pydantic_problems("calendar.yaml", "", exc)
         return []
     out: list[WindowRecord] = []
+    names: set[str] = set()
     for i, w in enumerate(calendar.windows):
         if w.ends < w.starts:
             problems.append(Problem("calendar.yaml", f"windows[{i}]",
                                     "the window ends before it starts"))
-        elif w.name in {x.name for x in out}:
+        elif w.name in names:
             problems.append(Problem("calendar.yaml", f"windows[{i}].name",
-                                    f"{w.name!r} is defined twice"))
+                                    f"{shown(w.name)} is defined twice"))
         else:
+            names.add(w.name)
             out.append(WindowRecord(w.name, w.kind, w.starts, w.ends))
     return out
 
@@ -320,8 +387,8 @@ def _windows(root: Path, problems: list[Problem]) -> list[WindowRecord]:
 def read_company(root: Path) -> Company:
     """Every record under root, checked across files; LoadError lists every problem at once."""
     catalog, problems = read_catalog(root)
-    records = _releases(root, catalog, problems)
-    records, items = _jira(root, records, problems)
+    records, failed, nothing_read = _releases(root, catalog, problems)
+    records, items = _jira(root, records, failed, nothing_read, problems)
     windows = _windows(root, problems)
     if problems:
         raise LoadError(problems)
