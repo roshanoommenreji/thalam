@@ -200,9 +200,8 @@ def test_must_ship_before_lists_ties_lowest_version_first() -> None:
         rel("d", "1.0.0", needs=[("b", "==1.9.0")]),
         rel("a", "1.0.0", needs=[("c", ">=1.0.0"), ("d", ">=1.0.0")]),
     ])
-    steps = labels(must_ship_before(g, "a", "1.0.0").steps)
-    assert steps.index("b 1.9.0") < steps.index("b 1.10.0")
-    assert steps[:2] == ["b 1.9.0", "b 1.10.0"]
+    assert labels(must_ship_before(g, "a", "1.0.0").steps) == [
+        "b 1.9.0", "b 1.10.0", "c 1.0.0", "d 1.0.0"]
 
 
 def test_versions_and_ranges() -> None:
@@ -219,6 +218,7 @@ def test_versions_and_ranges() -> None:
     "~=1.0", "==1.*", "===1.0", "", " ", "soon",
     ">=1!2.0", ">=1.0.0rc1", "==1.0.0.dev1", "==1.0+local", "==1.0.post1",
     ">=1.0,", "==1.0.0,,", ",>=1.0", ">=1.0.0.0",
+    ">=1.0 ", " >=1.0", ">= 1.0",
 ])
 def test_a_range_outside_the_plain_operators_is_refused(bad: str) -> None:
     with pytest.raises(ValueError, match="not a version range"):
@@ -283,3 +283,8 @@ def test_make_graph_refuses_a_version_that_is_not_one() -> None:
 def test_make_graph_refuses_two_releases_with_one_label() -> None:
     with pytest.raises(ValueError, match="a 1.0.0"):
         _built(releases=[rel("a", "1.0"), rel("a", "1.0.0")])
+
+
+def test_make_graph_refuses_a_component_that_depends_on_itself() -> None:
+    with pytest.raises(ValueError, match="a depends on itself"):
+        _built(edges=[("a", "a")])

@@ -27,7 +27,7 @@ from packaging.version import Version
 from thalam_shared.lifecycle import NOT_IN_FLIGHT
 
 VERSION = re.compile(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
-RANGE_PART = re.compile(r"\s*(==|!=|<=|>=|<|>)\s*([0-9]+(?:\.[0-9]+){0,2})\s*")
+RANGE_PART = re.compile(r"[ 	]*(==|!=|<=|>=|<|>)[ 	]*([0-9]+(?:\.[0-9]+){0,2})[ 	]*")
 
 
 class GraphError(Exception):
@@ -112,15 +112,17 @@ def make_graph(components: Iterable[Component], edges: Iterable[tuple[str, str]]
     """A well-formed Graph in one canonical order, so two built from the same facts compare equal.
 
     Refused: an edge, a release or a need on a component that is not one (UnknownName); a need
-    whose range does not parse or a release whose version is not one (ValueError); two releases
-    with one label (ValueError). Versions are stored as X.Y.Z. A Graph built directly skips
-    these checks, so the queries still check what they read.
+    whose range does not parse, a release whose version is not one, a component that depends on
+    itself, or two releases with one label (ValueError). Versions are stored as X.Y.Z. A Graph
+    built directly skips these checks, so the queries still check what they read.
     """
     comps = {c.name: c for c in sorted(components, key=lambda c: c.name)}
     deps: dict[str, set[str]] = {name: set() for name in comps}
     for src, dst in edges:
         _component_in(comps, src)
         _component_in(comps, dst)
+        if src == dst:
+            raise ValueError(f"{src} depends on itself")
         deps[src].add(dst)
     rels: dict[str, Release] = {}
     for r in releases:
