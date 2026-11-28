@@ -6,6 +6,11 @@ the logic is proved without Postgres and the read is proved on its own (R8).
 
 A Graph holds no free text (no description, no summary), so nothing printed from it can carry a
 planted terminal escape.
+
+Two kinds of edge, kept apart. `depends_on` (the catalogue's declared dependencies between
+components) drives `upstream` and `downstream`. Needs (a release's version ranges on other
+components) drive `must_ship_before` and `release_order`. Nothing here requires a need to follow a
+declared dependency; the loader (Task 7) warns when one does not.
 """
 
 from __future__ import annotations
@@ -21,12 +26,12 @@ from packaging.version import Version
 
 from thalam_shared.lifecycle import NOT_IN_FLIGHT
 
-VERSION = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
-OPERATORS = frozenset({"==", "!=", "<=", ">=", "<", ">"})
+VERSION = re.compile(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
+RANGE_PART = re.compile(r"\s*(==|!=|<=|>=|<|>)\s*([0-9]+(?:\.[0-9]+){0,2})\s*")
 
 
 class GraphError(Exception):
-    """The needs form a loop, so no order exists."""
+    """The needs form a loop, so no order exists. The message names one loop; others may exist."""
 
 
 class UnknownName(LookupError):
@@ -35,21 +40,25 @@ class UnknownName(LookupError):
 
 def parse_version(text: str) -> str:
     """'2.3' or '2.3.0' -> '2.3.0'. Anything else is a ValueError."""
-    match = VERSION.match(text.strip())
+    match = VERSION.fullmatch(text.strip())
     if not match:
         raise ValueError(f"not a version: {text!r} (expected X.Y.Z)")
     return f"{int(match[1])}.{int(match[2])}.{int(match[3] or 0)}"
 
 
 def parse_range(text: str) -> SpecifierSet:
-    """'>=1.8.0,<2', comparison operators only: no '~=', no '===', no wildcards."""
+    """'>=1.8.0,<2': plain release numbers and the six comparison operators, nothing else.
+
+    No '~=', '===' or wildcards, no epochs, pre-releases, dev, post or local versions, and no
+    empty part.
+    """
+    parts = [RANGE_PART.fullmatch(part) for part in text.split(",")]
+    if not all(parts):
+        raise ValueError(f"not a version range: {text!r} (use >=, >, <=, <, == or !=)")
     try:
-        spec = SpecifierSet(text)
+        return SpecifierSet(",".join(m[1] + m[2] for m in parts if m))
     except InvalidSpecifier:
         raise ValueError(f"not a version range: {text!r}") from None
-    if not text.strip() or any(s.operator not in OPERATORS or "*" in s.version for s in spec):
-        raise ValueError(f"not a version range: {text!r} (use >=, >, <=, <, == or !=)")
-    return spec
 
 
 @dataclass(frozen=True)
@@ -100,24 +109,46 @@ class Graph:
 
 def make_graph(components: Iterable[Component], edges: Iterable[tuple[str, str]],
                releases: Iterable[Release], windows: Iterable[Window] = ()) -> Graph:
-    """A Graph in one canonical order, so two built from the same facts compare equal."""
+    """A well-formed Graph in one canonical order, so two built from the same facts compare equal.
+
+    Refused: an edge, a release or a need on a component that is not one (UnknownName); a need
+    whose range does not parse or a release whose version is not one (ValueError); two releases
+    with one label (ValueError). Versions are stored as X.Y.Z. A Graph built directly skips
+    these checks, so the queries still check what they read.
+    """
     comps = {c.name: c for c in sorted(components, key=lambda c: c.name)}
     deps: dict[str, set[str]] = {name: set() for name in comps}
     for src, dst in edges:
+        _component_in(comps, src)
+        _component_in(comps, dst)
         deps[src].add(dst)
-    rels = sorted(
-        (replace(r, needs=tuple(sorted(r.needs, key=lambda n: n.component))) for r in releases),
-        key=lambda r: (r.component, Version(r.version)),
-    )
-    return Graph(comps, {k: frozenset(v) for k, v in deps.items()}, tuple(rels),
-                 tuple(sorted(windows, key=lambda w: w.name)))
+    rels: dict[str, Release] = {}
+    for r in releases:
+        _component_in(comps, r.component)
+        for need in r.needs:
+            _component_in(comps, need.component)
+            parse_range(need.spec)
+        fixed = replace(
+            r, version=parse_version(r.version),
+            needs=tuple(sorted(r.needs, key=lambda n: (n.component, n.spec))),
+        )
+        if fixed.label in rels:
+            raise ValueError(f"two releases are called {fixed.label}")
+        rels[fixed.label] = fixed
+    ordered = sorted(rels.values(), key=lambda r: (r.component, Version(r.version)))
+    return Graph(comps, {k: frozenset(v) for k, v in deps.items()}, tuple(ordered),
+                 tuple(sorted(windows, key=lambda w: (w.name, w.starts, w.ends, w.kind))))
+
+
+def _component_in(components: Mapping[str, Component], name: str) -> Component:
+    try:
+        return components[name]
+    except KeyError:
+        raise UnknownName(f"no component named {name!r}") from None
 
 
 def _component(g: Graph, name: str) -> Component:
-    try:
-        return g.components[name]
-    except KeyError:
-        raise UnknownName(f"no component named {name!r}") from None
+    return _component_in(g.components, name)
 
 
 def _walk(start: str, next_of: Mapping[str, Iterable[str]]) -> list[str]:
@@ -171,8 +202,8 @@ def release(g: Graph, name: str, version: str) -> Release:
 @dataclass(frozen=True)
 class Step:
     release: Release  # to ship first
-    needed_by: str  # the label of the release whose need it meets
-    need: Need
+    needed_by: str  # the first release that reached it; others may need it too
+    need: Need  # that release's need
     prod: str | None  # what prod runs today
 
 
@@ -209,27 +240,41 @@ def _resolve(g: Graph, needer: Release, need: Need) -> Satisfied | Blocker | Rel
     candidates = [r for r in _releases_of(g, need.component)
                   if r.in_flight and Version(r.version) in spec]
     if not candidates:
-        return Blocker(need, needer.label, "no release satisfies it")
+        return Blocker(need, needer.label,
+                       f"no release satisfies {spec} (prod runs {prod or 'nothing'})")
     return min(candidates, key=lambda r: Version(r.version))
 
 
+def _by_version(label: str) -> tuple[str, Version]:
+    name, _, version = label.rpartition(" ")
+    return name, Version(version)
+
+
 def _ordered(edges: Mapping[str, set[str]], nodes: Iterable[str]) -> list[str]:
-    """Every node after the nodes it needs; ties in name order, so the answer is stable."""
-    sorter = TopologicalSorter({n: edges.get(n, set()) for n in sorted(nodes)})
+    """Every node after the nodes it needs; ties in name order, then lowest version first."""
+    sorter = TopologicalSorter({n: edges.get(n, set()) for n in sorted(nodes, key=_by_version)})
     try:
         sorter.prepare()
     except CycleError as exc:
-        raise GraphError("the needs form a loop: " + " → ".join(exc.args[1])) from None
+        # args[1] lists each node as the predecessor of the next, and repeats the first at the end.
+        # A predecessor is what a release needs, so reverse it to read "needs".
+        loop = list(reversed(exc.args[1][:-1]))
+        start = loop.index(min(loop))
+        loop = loop[start:] + loop[:start]
+        raise GraphError("the needs form a loop: " + " → ".join([*loop, loop[0]])) from None
     order: list[str] = []
     while sorter.is_active():
-        ready = sorted(sorter.get_ready())
+        ready = sorted(sorter.get_ready(), key=_by_version)
         order += ready
         sorter.done(*ready)
     return order
 
 
 def must_ship_before(g: Graph, name: str, version: str) -> Answer:
-    """What has to ship before `name version`, upstream first, and what nothing can satisfy."""
+    """What has to ship before `name version`, upstream first, and what nothing can satisfy.
+
+    It answers for any release, including one already released or cancelled.
+    """
     target = release(g, name, version)
     steps: dict[str, Step] = {}
     satisfied: list[Satisfied] = []
@@ -258,7 +303,11 @@ def must_ship_before(g: Graph, name: str, version: str) -> Answer:
 
 
 def release_order(g: Graph) -> list[Release]:
-    """Every release in flight, each after the releases it needs."""
+    """Every release in flight, each after the releases it needs.
+
+    Nothing orders two in-flight versions of one component except a need between them; the
+    version order is only the tie-break within a layer.
+    """
     flying = {r.label: r for r in g.releases if r.in_flight}
     edges: dict[str, set[str]] = {}
     for r in flying.values():
