@@ -92,7 +92,9 @@ def pydantic_problems(file: str, prefix: str, exc: ValidationError) -> list[Prob
     """One Problem per Pydantic error, located as "prefix.field[i]"."""
     out = []
     for error in exc.errors():
-        loc = "".join(f"[{p}]" if isinstance(p, int) else f".{p}" for p in error["loc"])
+        # A key a file invents (an extra field) is part of loc: flatten it, it is printed.
+        loc = "".join(f"[{p}]" if isinstance(p, int) else f".{flatten(str(p), 60)}"
+                      for p in error["loc"])
         out.append(Problem(file, (prefix + loc).lstrip(".") or "(file)", error["msg"]))
     return out
 

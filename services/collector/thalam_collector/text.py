@@ -1,24 +1,28 @@
 """The one place untrusted text is flattened and quoted (CLAUDE.md rule 4, SPEC-002-R6).
 
-flatten() is for text that is stored (a Jira summary, a catalog description); shown() is for a
-file's value that appears in a Problem message. Both are written with escapes, never with literal
-invisible characters, so a reviewer can see what is in the set.
+flatten() is for text that is stored (a Jira summary, a catalog description) and for names built
+into a problem's field; shown() is for a file's value that appears in a Problem message.
 """
 
 from __future__ import annotations
 
-import re
+import unicodedata
 
-# One space replaces each run of: control characters (C0, DEL, C1), lone surrogates, the line and
-# paragraph separators U+2028 and U+2029, the bidi controls U+202A-U+202E and U+2066-U+2069 (they
-# reorder text when it is printed), and whitespace of every kind.
-_FLATTEN = re.compile(
-    "[\\x00-\\x1f\\x7f-\\x9f\\ud800-\\udfff\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069\\s]+")
+# Unicode categories that become part of a run collapsing to one space: control characters
+# (C0, DEL, C1), format characters (zero-width characters, the bidi controls that reorder text
+# when it is printed, LRM and RLM, and the Tag block U+E0000 to U+E007F, which carries invisible
+# text a model can still read), lone surrogates, and every kind of space or line separator.
+_UNSAFE = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp", "Zs"})
 
 
 def flatten(text: str, cap: int) -> str:
-    """One line of plain text, at most `cap` characters, with no leading or trailing space."""
-    return _FLATTEN.sub(" ", text).strip()[:cap].rstrip()
+    """One line of plain text, at most `cap` characters, with no leading or trailing space.
+
+    Every run of whitespace or of unsafe characters becomes one space. A zero-width joiner inside
+    an emoji sequence is one of them, so flattening splits the sequence: that is accepted.
+    """
+    spaced = "".join(" " if unicodedata.category(ch) in _UNSAFE else ch for ch in text)
+    return " ".join(spaced.split())[:cap].rstrip()
 
 
 def shown(value: object, cap: int = 80) -> str:

@@ -26,8 +26,11 @@ from packaging.version import Version
 
 from thalam_shared.lifecycle import NOT_IN_FLIGHT
 
-VERSION = re.compile(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
-RANGE_PART = re.compile(r"[ \t]*(==|!=|<=|>=|<|>)[ \t]*([0-9]+(?:\.[0-9]+){0,2})[ \t]*")
+# A number is one to nine digits: Python refuses to turn 4,300 digits into an int, and no real
+# release number needs more than nine.
+VERSION = re.compile(r"([0-9]{1,9})\.([0-9]{1,9})(?:\.([0-9]{1,9}))?")
+RANGE_PART = re.compile(
+    r"[ \t]*(==|!=|<=|>=|<|>)[ \t]*([0-9]{1,9}(?:\.[0-9]{1,9}){0,2})[ \t]*")
 
 
 class GraphError(Exception):

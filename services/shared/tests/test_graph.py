@@ -214,11 +214,24 @@ def test_versions_and_ranges() -> None:
     assert parse_range(">=1.8.0, <2.0")
 
 
+def test_a_number_of_ten_digits_is_refused() -> None:
+    # Each number is at most nine digits, so a 4,400-digit number (which Python refuses to turn
+    # into an int, long after the load) is refused where it is read.
+    assert parse_version("999999999.999999999.999999999") == "999999999.999999999.999999999"
+    for bad in ("1234567890.0.0", "1.1234567890", "1." + "9" * 4400):
+        with pytest.raises(ValueError, match="not a version"):
+            parse_version(bad)
+    assert parse_range(">=999999999.0.0")
+    for bad in (">=1234567890", ">=1.0.1234567890", "<" + "9" * 4400):
+        with pytest.raises(ValueError, match="not a version range"):
+            parse_range(bad)
+
+
 @pytest.mark.parametrize("bad", [
     "~=1.0", "==1.*", "===1.0", "", " ", "soon",
     ">=1!2.0", ">=1.0.0rc1", "==1.0.0.dev1", "==1.0+local", "==1.0.post1",
     ">=1.0,", "==1.0.0,,", ",>=1.0", ">=1.0.0.0",
-    ">=1.0 ", " >=1.0", ">= 1.0",
+    ">=1.0\u00a0", "\u2003>=1.0", ">=\u20031.0",
 ])
 def test_a_range_outside_the_plain_operators_is_refused(bad: str) -> None:
     with pytest.raises(ValueError, match="not a version range"):

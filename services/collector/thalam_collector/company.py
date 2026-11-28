@@ -17,9 +17,16 @@ import re
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    Strict,
+    ValidationError,
+    field_validator,
+)
 from thalam_shared import graph
 from thalam_shared.lifecycle import NOT_IN_FLIGHT, STATES, Event, allowed, current
 
@@ -30,7 +37,10 @@ from thalam_collector.text import flatten, shown
 
 SUMMARY_CAP = 255
 STATUS_CAP = 64
-EVENT = re.compile(r"^(?P<state>[a-z_]+) (?P<at>\S+)(?: (?P<start>\S+) (?P<end>\S+))?$")
+EVENT = re.compile(r"(?P<state>[a-z_]+) (?P<at>\S+)(?: (?P<start>\S+) (?P<end>\S+))?")  # fullmatch
+YEARS = range(2000, 2101)  # a date outside these is a typo or a planted value, not a release
+_ID = r"^[0-9]{1,20}$"  # Jira's ids are numeric strings
+_Date = Annotated[date, Strict()]  # an integer or a string is not a date (0 is 1970-01-01)
 
 
 class _Strict(BaseModel):
@@ -39,7 +49,7 @@ class _Strict(BaseModel):
 
 class _Release(_Strict):
     version: str
-    window: tuple[date, date]
+    window: tuple[_Date, _Date]
     needs: dict[str, str] = Field(default_factory=dict)
     events: list[str]
 
@@ -61,8 +71,8 @@ class _Manifest(_Strict):
 class _Window(_Strict):
     name: str = Field(min_length=1, max_length=100)
     kind: Literal["freeze", "blackout"]
-    starts: date
-    ends: date
+    starts: _Date
+    ends: _Date
 
 
 class _Calendar(_Strict):
@@ -74,7 +84,7 @@ class _Loose(BaseModel):
 
 
 class _JiraVersion(_Loose):
-    id: str
+    id: str = Field(pattern=_ID)
     name: str
 
 
@@ -83,7 +93,7 @@ class _JiraStatus(_Loose):
 
 
 class _JiraFixVersion(_Loose):
-    id: str
+    id: str = Field(pattern=_ID)
 
 
 class _JiraFields(_Loose):
@@ -93,7 +103,7 @@ class _JiraFields(_Loose):
 
 
 class _JiraIssue(_Loose):
-    key: str = Field(pattern=r"^[A-Z][A-Z0-9]+-[0-9]+$")
+    key: str = Field(pattern=r"^[A-Z][A-Z0-9]+-[0-9]+$", max_length=100)
     fields: _JiraFields
 
 
@@ -137,10 +147,14 @@ class Company:
     warnings: tuple[str, ...]
 
 
-_FAILED: Any = object()  # what _read returns when it has already filed the problem
+class _Failed:
+    """What _read returns, instead of a document, when it has already filed the problem."""
 
 
-def _read(root: Path, rel: str, problems: list[Problem]) -> Any:
+_FAILED = _Failed()
+
+
+def _read(root: Path, rel: str, problems: list[Problem]) -> object:
     """The one document in a file, or _FAILED after adding why to `problems`.
 
     Both readers are the hardened ones in thalam_collector.files: nothing in a file can raise out
@@ -174,35 +188,52 @@ def _unknown(name: str, known: set[str]) -> str:
     return f"{message} (did you mean {shown(near[0])}?)" if near else message
 
 
+class _BadEvent(ValueError):
+    """An event line that cannot be read; `message` is fixed text, never a quote of the line."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _years_ok(*days: date | datetime) -> bool:
+    return all(day.year in YEARS for day in days)
+
+
 def _event(line: str, window: tuple[date, date]) -> Event:
-    match = EVENT.match(line)
+    match = EVENT.fullmatch(line)
     if not match:
-        raise ValueError("expected '<state> <time>' or 'replan <time> <start> <end>'")
+        raise _BadEvent("expected '<state> <time>' or 'replan <time> <start> <end>', with the "
+                        "time written without spaces, such as 'planned 2026-11-10T10:00:00+05:30'")
     try:
         at = datetime.fromisoformat(match["at"])
     except ValueError:
-        raise ValueError("the time is not an ISO 8601 date and time with a UTC offset") from None
+        raise _BadEvent("the time is not an ISO 8601 date and time with a UTC offset") from None
     if at.tzinfo is None:
-        raise ValueError("the time needs its UTC offset, such as +05:30")
+        raise _BadEvent("the time needs its UTC offset, such as +05:30")
+    if not _years_ok(at):
+        raise _BadEvent("the time's year out of range (2000 to 2100)")
     if match["state"] == "replan":
         if not match["start"]:
-            raise ValueError("a replan names its new window: replan <time> <start> <end>")
+            raise _BadEvent("a replan names its new window: replan <time> <start> <end>")
         try:
             new = (date.fromisoformat(match["start"]), date.fromisoformat(match["end"]))
         except ValueError:
-            raise ValueError("a replan's window dates must be YYYY-MM-DD") from None
+            raise _BadEvent("a replan's window dates must be YYYY-MM-DD") from None
         if new[1] < new[0]:
-            raise ValueError("the window ends before it starts")
+            raise _BadEvent("the window ends before it starts")
+        if not _years_ok(*new):
+            raise _BadEvent("the window's year out of range (2000 to 2100)")
         return Event("replan", at, None, new)
     if match["start"]:
-        raise ValueError("only a replan names a window")
+        raise _BadEvent("only a replan names a window")
     if match["state"] not in STATES:
-        raise ValueError(f"unknown state {shown(match['state'])}")
+        raise _BadEvent(f"unknown state {shown(match['state'])}")
     return Event("state", at, match["state"], window if match["state"] == "planned" else None)
 
 
 def _release(rel: str, where: str, component: str, doc: _Release, known: set[str],
-             problems: list[Problem]) -> ReleaseRecord:
+             catalog_ok: bool, problems: list[Problem]) -> ReleaseRecord:
     try:
         if graph.parse_version(doc.version) != doc.version:
             raise ValueError
@@ -210,12 +241,14 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
         problems.append(Problem(rel, f"{where}.version", f"{shown(doc.version)} is not X.Y.Z"))
     if doc.window[1] < doc.window[0]:
         problems.append(Problem(rel, f"{where}.window", "the window ends before it starts"))
+    if not _years_ok(*doc.window):
+        problems.append(Problem(rel, f"{where}.window", "year out of range (2000 to 2100)"))
     needs = []
     for name, spec in sorted(doc.needs.items()):
-        field = f"{where}.needs.{name}"
+        field = f"{where}.needs.{flatten(name, 60)}"  # printed, so never the raw key
         if name == component:
             problems.append(Problem(rel, field, "a release cannot need its own component"))
-        elif name not in known:
+        elif name not in known and catalog_ok:  # else the catalog's problems are the cause
             problems.append(Problem(rel, field, _unknown(name, known)))
         try:
             graph.parse_range(spec)
@@ -229,18 +262,18 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
         field = f"{where}.events[{j}]"
         try:
             event = _event(line, doc.window)
-        except ValueError as exc:
-            problems.append(Problem(rel, field, str(exc)))
+        except _BadEvent as exc:
+            problems.append(Problem(rel, field, exc.message))
             continue
         if events and event.at <= events[-1].at:
             problems.append(Problem(rel, field, "is not later than the event before it"))
         if event.kind == "replan" and (state is None or state in NOT_IN_FLIGHT):
             problems.append(Problem(rel, field, "a replan needs a release in flight"))
-        if event.kind == "state":
-            assert event.state is not None
-            if not allowed(state, event.state):
-                problems.append(Problem(rel, field,
-                                        f"{state or 'nothing'} cannot move to {event.state}"))
+        if event.kind == "state" and event.state is not None:
+            if state is None and event.state != "planned":
+                problems.append(Problem(rel, field, "a release must start with planned"))
+            elif not allowed(state, event.state):
+                problems.append(Problem(rel, field, f"{state} cannot move to {event.state}"))
             state = event.state
         events.append(event)
     if not doc.events:
@@ -248,7 +281,7 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
     return ReleaseRecord(component, doc.version, tuple(needs), tuple(events), rel)
 
 
-def _releases(root: Path, catalog: Catalog, problems: list[Problem]
+def _releases(root: Path, catalog: Catalog, catalog_ok: bool, problems: list[Problem]
               ) -> tuple[list[ReleaseRecord], set[str], bool]:
     """The release records, the components whose manifest failed, and whether no manifest was read.
 
@@ -285,7 +318,8 @@ def _releases(root: Path, catalog: Catalog, problems: list[Problem]
             failed |= names
             continue
         if manifest.component not in known:
-            problems.append(Problem(rel, "component", _unknown(manifest.component, known)))
+            if catalog_ok:  # else the catalog's problems are the cause
+                problems.append(Problem(rel, "component", _unknown(manifest.component, known)))
             failed |= names
             continue
         for i, doc in enumerate(manifest.releases):
@@ -296,7 +330,8 @@ def _releases(root: Path, catalog: Catalog, problems: list[Problem]
                 problems.append(Problem(rel, f"{where}.version", f"{label} is defined twice"))
                 continue
             seen.add(key)
-            records.append(_release(rel, where, manifest.component, doc, known, problems))
+            records.append(
+                _release(rel, where, manifest.component, doc, known, catalog_ok, problems))
     if not read_any:
         problems.append(Problem("releases/", "(folder)", "no release manifests"))
     return records, failed, not read_any
@@ -307,6 +342,7 @@ def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_re
     by_label = {f"{r.component} {r.version}": r for r in records}
     ids: dict[str, ReleaseRecord] = {}
     skipped: set[str] = set()  # Jira ids of versions whose manifest failed: already one problem
+    before = len(problems)
     data = _read(root, "jira/versions.json", problems)
     if isinstance(data, list):
         for i, raw in enumerate(data):
@@ -322,14 +358,18 @@ def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_re
                     continue
                 problems.append(Problem("jira/versions.json", f"[{i}].name",
                                         f"{shown(version.name)} names no release in the manifests"))
-            elif version.id in ids or record.jira_version_id is not None:
+            elif record.jira_version_id is not None:
                 problems.append(Problem("jira/versions.json", f"[{i}]",
-                                        "a Jira version is listed twice"))
+                                        f"Jira version {shown(version.name)} is listed twice"))
+            elif version.id in ids:
+                problems.append(Problem("jira/versions.json", f"[{i}]",
+                                        f"Jira id {shown(version.id)} is used twice"))
             else:
                 updated = replace(record, jira_version_id=version.id)
                 by_label[version.name] = ids[version.id] = updated
     elif data is not _FAILED:
         problems.append(Problem("jira/versions.json", "(file)", "expected a list of versions"))
+    versions_ok = len(problems) == before  # else the items' ids would only repeat the cause
     items: list[ItemRecord] = []
     listed: set[tuple[str, str, str]] = set()
     data = _read(root, "jira/search.json", problems)
@@ -344,7 +384,7 @@ def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_re
                     where = f"issues[{i}].fields.fixVersions[{j}]"
                     owner = ids.get(fix.id)
                     if owner is None:
-                        if fix.id not in skipped:
+                        if versions_ok and fix.id not in skipped:
                             problems.append(Problem("jira/search.json", where,
                                                     f"no Jira version with id {shown(fix.id)}"))
                         continue
@@ -372,22 +412,28 @@ def _windows(root: Path, problems: list[Problem]) -> list[WindowRecord]:
     out: list[WindowRecord] = []
     names: set[str] = set()
     for i, w in enumerate(calendar.windows):
-        if w.ends < w.starts:
-            problems.append(Problem("calendar.yaml", f"windows[{i}]",
-                                    "the window ends before it starts"))
-        elif w.name in names:
-            problems.append(Problem("calendar.yaml", f"windows[{i}].name",
-                                    f"{shown(w.name)} is defined twice"))
+        name = flatten(w.name, 100)  # "a<tab>b" and "a b" are one name
+        where = f"windows[{i}]"
+        if not name:
+            problems.append(Problem("calendar.yaml", where, "a window needs a name"))
+        elif w.ends < w.starts:
+            problems.append(Problem("calendar.yaml", where, "the window ends before it starts"))
+        elif not _years_ok(w.starts, w.ends):
+            problems.append(Problem("calendar.yaml", where, "year out of range (2000 to 2100)"))
+        elif name in names:
+            problems.append(Problem("calendar.yaml", f"{where}.name",
+                                    f"{shown(name)} is defined twice"))
         else:
-            names.add(w.name)
-            out.append(WindowRecord(w.name, w.kind, w.starts, w.ends))
+            names.add(name)
+            out.append(WindowRecord(name, w.kind, w.starts, w.ends))
     return out
 
 
 def read_company(root: Path) -> Company:
     """Every record under root, checked across files; LoadError lists every problem at once."""
     catalog, problems = read_catalog(root)
-    records, failed, nothing_read = _releases(root, catalog, problems)
+    catalog_ok = not problems  # else a name missing from the catalog may be the catalog's fault
+    records, failed, nothing_read = _releases(root, catalog, catalog_ok, problems)
     records, items = _jira(root, records, failed, nothing_read, problems)
     windows = _windows(root, problems)
     if problems:

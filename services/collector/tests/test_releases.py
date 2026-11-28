@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -46,7 +47,7 @@ def test_a_manifest_refuses_unknown_fields(company_tree: Make) -> None:
     with pytest.raises(LoadError) as caught:
         read_company(root)
     # The manifest is skipped, and its Jira versions are not blamed for it (one cause, one problem).
-    assert ("releases/api.yaml", "colour") in [(p.file, p.field) for p in caught.value.problems]
+    assert [(p.file, p.field) for p in caught.value.problems] == [("releases/api.yaml", "colour")]
 
 
 @pytest.mark.parametrize("bad", ["~=2.0", "==2.*", "soon"])
@@ -55,6 +56,7 @@ def test_ranges_use_comparison_operators_only(company_tree: Make, bad: str) -> N
     with pytest.raises(LoadError) as caught:
         read_company(root)
     assert caught.value.problems[0].field == "releases[1].needs.db-svc"
+    assert repr(bad) in caught.value.problems[0].message  # it says which range it refused
 
 
 def test_jira_extra_fields_are_ignored_and_summaries_capped(company_tree: Make) -> None:
@@ -202,7 +204,7 @@ def test_a_folder_named_like_a_manifest_is_not_read(company_tree: Make) -> None:
 def test_summary_and_status_are_flattened_to_plain_text(company_tree: Make) -> None:
     # NUL, ESC and a newline are control characters; U+202E reorders text when printed, so it is
     # flattened too (thalam_collector.text decides this once for every untrusted string).
-    ugly = "a\x1bb\x00c\nd‮e"
+    ugly = "a\x1bb\x00c\nd\u202ee"
     root = company_tree(replace={
         "jira/search.json": ('"Call the new db endpoint"', json.dumps(ugly))})
     assert read_company(root).items[0].summary == "a b c d e"
@@ -305,3 +307,250 @@ def test_a_5000_character_jira_version_name_gives_a_short_message(company_tree: 
         read_company(root)
     named = [p for p in caught.value.problems if "names no release" in p.message]
     assert len(named) == 1 and len(named[0].message) < 200
+
+
+# --- Second round of review fixes ---
+
+API = "releases/api.yaml"
+DB = "releases/db-svc.yaml"
+HOSTILE_KEY = '"a\\e[2J\\u202eb"'  # YAML escapes: ESC, then U+202E, inside a double-quoted key
+BAD_CHARS = {"Cc", "Cf"}
+
+
+def _clean(text: str) -> bool:
+    return not any(unicodedata.category(c) in BAD_CHARS for c in text)
+
+
+def test_a_hostile_key_never_reaches_a_problem_field_raw(company_tree: Make) -> None:
+    root = company_tree(
+        replace={
+            API: ("needs: {db-svc:", f"needs: {{{HOSTILE_KEY}:"),
+            DB: ("  - version: 2.0.0\n", f"  - version: 2.0.0\n    {HOSTILE_KEY}: x\n"),
+            "calendar.yaml": ("kind: freeze,", f"kind: freeze, {HOSTILE_KEY}: x,"),
+        })
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    fields = [p.field for p in caught.value.problems]
+    assert len(fields) >= 3
+    assert all(_clean(f) for f in fields), fields
+    assert all(_clean(p.message) for p in caught.value.problems)
+    # Flattened, not quoted: the field stays readable.
+    assert "releases[1].needs.a [2J b" in fields
+    assert "releases[0].a [2J b" in fields
+    assert "windows[0].a [2J b" in fields
+
+
+def _calendar(*names: str) -> str:
+    rows = "".join(f"  - {{name: {n}, kind: freeze, starts: 2026-12-19, ends: 2027-01-04}}\n"
+                   for n in names)
+    return "windows:\n" + rows
+
+
+def test_window_names_are_flattened_before_the_duplicate_check(company_tree: Make) -> None:
+    root = company_tree(files={"calendar.yaml": _calendar('"a\\tb"', "a b")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(p.field, p.message) for p in caught.value.problems] == [
+        ("windows[1].name", "'a b' is defined twice")]
+
+
+def test_a_window_name_of_only_invisible_characters_is_a_problem(company_tree: Make) -> None:
+    root = company_tree(files={"calendar.yaml": _calendar('"\\t\\u200b"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(p.field, p.message) for p in caught.value.problems] == [
+        ("windows[0]", "a window needs a name")]
+
+
+def test_the_graph_gets_the_flattened_window_name(company_tree: Make) -> None:
+    root = company_tree(files={"calendar.yaml": _calendar('"x\\ty"')})
+    assert [w.name for w in read_company(root).windows] == ["x y"]
+
+
+def test_a_jira_id_is_a_short_number(company_tree: Make) -> None:
+    ugly = "7" * 1500 + "\x00" + "\x1b" + "8" * 1500
+    versions = json.dumps([{"id": ugly, "name": "api 1.0.0"}])
+    search = _search(_issue("API-1", ugly))
+    root = company_tree(files={"jira/versions.json": versions, "jira/search.json": search})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert caught.value.problems
+    assert all(len(str(p)) < 250 and _clean(str(p)) for p in caught.value.problems)
+
+
+def test_a_5000_character_issue_key_gives_a_short_message(company_tree: Make) -> None:
+    search = _search(_issue("A" * 5000, "2"))
+    root = company_tree(files={"jira/search.json": search})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert caught.value.problems
+    assert all(len(str(p)) < 250 for p in caught.value.problems)
+
+
+def test_a_4400_digit_need_is_a_problem_not_a_later_crash(company_tree: Make) -> None:
+    root = company_tree(replace={API: ('">=2.0.0"', '">=' + "9" * 4400 + '"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(p.field, p.message[:19]) for p in caught.value.problems] == [
+        ("releases[1].needs.db-svc", "not a version range")]
+    assert all(len(str(p)) < 250 for p in caught.value.problems)
+
+
+def test_a_4400_digit_version_is_a_problem(company_tree: Make) -> None:
+    root = company_tree(replace={API: ("version: 1.1.0", "version: 1.1." + "9" * 4400)})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert any(p.field == "releases[1].version" and "is not X.Y.Z" in p.message
+               for p in caught.value.problems)
+
+
+_API_RELEASED = "      - released 2026-10-01T11:00:00+05:30\n"
+_DB_PLANNED = "      - planned 2026-11-01T10:00:00+05:30\n"
+_DB_SCOPED = "      - scoped 2026-11-02T10:00:00+05:30\n"
+_API_PLANNED_1_1 = "      - planned 2026-11-10T10:00:00+05:30\n"
+_OTHER_API_1_0 = (
+    "component: api\nreleases:\n  - version: 1.0.0\n    window: [2026-10-01, 2026-10-01]\n"
+    "    events:\n      - planned 2026-09-01T10:00:00+05:30\n")
+_WINDOW_1_1 = "window: [2026-12-01, 2026-12-01]"
+_VERSION_3 = '{"id": "3", "name": "db-svc 2.0.0"'
+
+# (replace, files, file, field, text): each edits the minimal company to break one rule, and the
+# load must refuse it with that problem (SPEC-002-R5: the life-cycle rules).
+RULES = [
+    pytest.param({API: ("scoped 2026-09-02", "scoped 2026-09-01")}, None,
+                 API, "releases[0].events[1]", "is not later than", id="event-at-the-same-time"),
+    pytest.param({API: ("scoped 2026-09-02", "scoped 2026-08-01")}, None,
+                 API, "releases[0].events[1]", "is not later than", id="event-earlier"),
+    pytest.param({API: ("ready 2026-09-03T10:00:00+05:30", "ready 2026-09-03T10:00:00")}, None,
+                 API, "releases[0].events[2]", "needs its UTC offset", id="naive-time"),
+    pytest.param({API: ("ready 2026-09-03", "soon 2026-09-03")}, None,
+                 API, "releases[0].events[2]", "unknown state 'soon'", id="unknown-state"),
+    pytest.param({DB: (_DB_PLANNED, "")}, None,
+                 DB, "releases[0].events[0]", "a release must start with planned",
+                 id="first-event-not-planned"),
+    pytest.param({DB: ("scoped 2026-11-02", "ready 2026-11-02")}, None,
+                 DB, "releases[0].events[1]", "planned cannot move to ready", id="skipped-state"),
+    pytest.param({API: (_API_RELEASED,
+                        "      - rolled_back 2026-10-01T11:00:00+05:30\n"
+                        "      - scoped 2026-10-02T10:00:00+05:30\n")}, None,
+                 API, "releases[0].events[7]", "rolled_back cannot move to scoped",
+                 id="event-after-rolled-back"),
+    pytest.param({API: (_API_RELEASED,
+                        _API_RELEASED
+                        + "      - replan 2026-10-02T10:00:00+05:30 2026-10-05 2026-10-05\n")},
+                 None, API, "releases[0].events[7]", "a replan needs a release in flight",
+                 id="replan-after-released"),
+    pytest.param({DB: (_DB_PLANNED,
+                       "      - replan 2026-11-01T10:00:00+05:30 2026-11-20 2026-11-21\n"
+                       "      - planned 2026-11-01T11:00:00+05:30\n")}, None,
+                 DB, "releases[0].events[0]", "a replan needs a release in flight",
+                 id="replan-before-planned"),
+    pytest.param({DB: (_DB_SCOPED,
+                       _DB_SCOPED
+                       + "      - replan 2026-11-05T10:00:00+05:30 2026-11-25 2026-11-24\n")},
+                 None, DB, "releases[0].events[2]", "the window ends before it starts",
+                 id="replan-window-reversed"),
+    pytest.param({DB: ("window: [2026-11-20, 2026-11-20]", "window: [2026-11-21, 2026-11-20]")},
+                 None, DB, "releases[0].window", "ends before it starts",
+                 id="release-window-reversed"),
+    pytest.param({API: ("needs: {db-svc:", "needs: {api:")}, None,
+                 API, "releases[1].needs.api", "its own component", id="need-on-itself"),
+    pytest.param({API: ("needs: {db-svc:", "needs: {ghost:")}, None,
+                 API, "releases[1].needs.ghost", "no component named 'ghost'",
+                 id="need-on-a-ghost"),
+    pytest.param({DB: ("version: 2.0.0", "version: 2.0")}, None,
+                 DB, "releases[0].version", "is not X.Y.Z", id="version-without-a-patch"),
+    pytest.param(None, {"releases/zzz.yaml": _OTHER_API_1_0},
+                 "releases/zzz.yaml", "releases[0].version", "api 1.0.0 is defined twice",
+                 id="release-defined-in-two-files"),
+    pytest.param({"calendar.yaml": ("ends: 2027-01-04", "ends: 2026-12-01")}, None,
+                 "calendar.yaml", "windows[0]", "ends before it starts", id="window-reversed"),
+    pytest.param({API: (_API_PLANNED_1_1, "      - planned 2026-11-10 10:00:00+05:30\n")}, None,
+                 API, "releases[1].events[0]", "such as 'planned 2026-11-10T10:00:00+05:30'",
+                 id="time-with-a-space"),
+    pytest.param({API: (_API_PLANNED_1_1,
+                        '      - "planned 2026-11-10T10:00:00+05:30\\n"\n')}, None,
+                 API, "releases[1].events[0]", "expected '<state> <time>'",
+                 id="trailing-newline"),
+    pytest.param({"jira/versions.json": (_VERSION_3, '{"id": "3", "name": "api 1.1.0"')}, None,
+                 "jira/versions.json", "[2]", "Jira version 'api 1.1.0' is listed twice",
+                 id="jira-name-twice"),
+    pytest.param({"jira/versions.json": (_VERSION_3, '{"id": "2", "name": "db-svc 2.0.0"')}, None,
+                 "jira/versions.json", "[2]", "Jira id '2' is used twice", id="jira-id-twice"),
+    pytest.param({API: (_WINDOW_1_1, "window: [0, 86400]")}, None,
+                 API, "releases[1].window", "date", id="window-of-integers"),
+    pytest.param({API: (_WINDOW_1_1, "window: ['2026-12-01', 2026-12-01]")}, None,
+                 API, "releases[1].window", "date", id="window-of-a-string"),
+    pytest.param({API: (_WINDOW_1_1, "window: [1999-12-01, 1999-12-01]")}, None,
+                 API, "releases[1].window", "year out of range", id="window-year-too-early"),
+    pytest.param({"calendar.yaml": ("ends: 2027-01-04", "ends: 2101-01-04")}, None,
+                 "calendar.yaml", "windows[0]", "year out of range", id="calendar-year-too-late"),
+    pytest.param({API: (_API_PLANNED_1_1, "      - planned 0001-01-01T00:00:00+14:00\n")}, None,
+                 API, "releases[1].events[0]", "year out of range", id="event-in-year-1"),
+]
+
+
+@pytest.mark.parametrize(("replace", "files", "file", "field", "text"), RULES)
+def test_the_release_rules_refuse_what_they_should(
+        company_tree: Make, replace: dict[str, tuple[str, str]] | None,
+        files: dict[str, str | None] | None, file: str, field: str, text: str) -> None:
+    root = company_tree(replace=replace, files=files)
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    found = [(p.file, p.field, p.message) for p in caught.value.problems]
+    assert any(f == file and field in fld and text in m for f, fld, m in found), found
+
+
+def test_a_broken_catalog_is_the_only_cause_reported(company_tree: Make) -> None:
+    root = company_tree(replace={"catalog/team.yaml": (
+        "type: service, lifecycle: production, owner: team-a}",
+        "type: 'not ok!', lifecycle: production, owner: team-a}")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert caught.value.problems
+    assert {p.file for p in caught.value.problems} == {"catalog/team.yaml"}
+    assert not any("no component named" in p.message for p in caught.value.problems)
+
+
+def test_a_bad_versions_file_does_not_also_fail_the_items(company_tree: Make) -> None:
+    root = company_tree(replace={"jira/versions.json": ('{"id": "2", "name": "api 1.1.0"',
+                                                        '{"id": "2"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(p.file, p.field) for p in caught.value.problems] == [
+        ("jira/versions.json", "[1].name")]
+
+
+def test_a_repeated_key_in_a_manifest_or_a_jira_file_is_a_problem(company_tree: Make) -> None:
+    root = company_tree(
+        replace={API: ('needs: {db-svc: ">=2.0.0"}',
+                       'needs: {db-svc: ">=2.0.0", db-svc: ">=9.0.0"}')},
+        files={"jira/search.json": '{"issues": [], "issues": []}\n'})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    found = {(p.file, p.field): p.message for p in caught.value.problems}
+    assert found[(API, "(file)")].startswith("duplicate key 'db-svc' at line ")
+    assert found[("jira/search.json", "(file)")] == "duplicate key 'issues'"
+
+
+def test_a_doubled_releases_key_is_a_problem(company_tree: Make) -> None:
+    root = company_tree(replace={DB: ("releases:\n", "releases: []\nreleases:\n")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(p.file, p.field, p.message) for p in caught.value.problems] == [
+        (DB, "(file)", "duplicate key 'releases' at line 3")]
+
+
+def test_a_yaml_merge_key_in_a_manifest_still_loads(company_tree: Make) -> None:
+    text = ("component: db-svc\n"
+            "releases:\n"
+            "  - &base\n"
+            "    version: 2.0.0\n"
+            "    window: [2026-11-20, 2026-11-20]\n"
+            "    events: [planned 2026-11-01T10:00:00+05:30]\n"
+            "  - <<: *base\n"
+            "    version: 2.1.0\n")
+    root = company_tree(files={DB: text, "jira/versions.json": "[]\n",
+                               "jira/search.json": '{"issues": []}\n'})
+    labels = sorted(f"{r.component} {r.version}" for r in read_company(root).releases)
+    assert "db-svc 2.1.0" in labels
