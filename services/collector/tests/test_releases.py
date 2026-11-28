@@ -296,3 +296,12 @@ def test_the_company_becomes_the_graph_its_files_describe(company_tree: Make) ->
     assert g.windows == (
         Window("year-end freeze", "freeze", date(2026, 12, 19), date(2027, 1, 4)),)
     assert prod_version(g, "api") == "1.0.0"
+
+
+def test_a_5000_character_jira_version_name_gives_a_short_message(company_tree: Make) -> None:
+    root = company_tree(replace={"jira/versions.json": (
+        '"name": "api 1.1.0"', '"name": "' + "x" * 5000 + '"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    named = [p for p in caught.value.problems if "names no release" in p.message]
+    assert len(named) == 1 and len(named[0].message) < 200
