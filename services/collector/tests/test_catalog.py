@@ -78,6 +78,9 @@ HOSTILE = [
                  "not valid YAML: a value could not be read (RecursionError)", id="deeply-nested"),
     pytest.param("date.yaml", b"description: 2024-13-45\n",
                  "not valid YAML: a value could not be read (ValueError)", id="bad-timestamp"),
+    pytest.param("tag.yaml", b"a: !!timestamp zzz\n",
+                 "not valid YAML: a value could not be read (AttributeError)",
+                 id="bad-tagged-scalar"),
     pytest.param("old.yml", b"kind: Group\n",
                  "only .yaml files are read: rename it to .yaml", id="yml-extension"),
 ]
@@ -95,9 +98,19 @@ def test_a_hostile_file_is_one_problem_and_the_rest_still_load(
 
 def test_a_folder_named_like_a_catalog_file_is_not_read(tmp_path: Path) -> None:
     root = _write(tmp_path, GROUP, _component("api"))
-    (root / "catalog" / "nested.yaml").mkdir()
-    (root / "catalog" / "nested.yaml" / "inner.yaml").write_text("kind: x\n", encoding="utf-8")
+    for folder in ("nested.yaml", "sub"):  # "kind: component" is a problem if anything reads it
+        (root / "catalog" / folder).mkdir()
+        (root / "catalog" / folder / "inner.yaml").write_text("kind: component\n", encoding="utf-8")
     assert read_catalog(root)[1] == []
+
+
+def test_a_huge_reference_is_one_short_problem(tmp_path: Path) -> None:
+    root = _write(tmp_path, GROUP, _component("web"),
+                  _component("api", depends=f'["{"x" * 100_000}"]'))
+    _, problems = read_catalog(root)
+    assert len(problems) == 1
+    assert problems[0].field == "documents[2].spec.dependsOn[0]"
+    assert len(problems[0].message) < 500
 
 
 def test_names_follow_backstage(tmp_path: Path) -> None:

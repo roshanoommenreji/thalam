@@ -12,11 +12,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from thalam_collector.files import read_yaml
 from thalam_collector.problems import Problem
 
 _NAME_PART = r"[A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*"  # Backstage's rule, written once
@@ -25,7 +25,6 @@ REF = re.compile(  # "component:name", "component:default/name" or "name"; use f
     rf"(?:(?P<kind>[A-Za-z]+):)?(?:default/)?(?P<name>{_NAME_PART})"
 )
 DESCRIPTION_CAP = 1000
-MAX_FILE_BYTES = 1_048_576  # pure-Python PyYAML took 83 s on a 4 MB file
 # Control characters, lone surrogates, line separators and whitespace all become one space.
 _FLATTEN = re.compile(r"[\x00-\x1f\x7f-\x9f\ud800-\udfff  \s]+")
 _SPELT = {"component": "Component", "group": "Group"}
@@ -53,7 +52,8 @@ class _ComponentSpec(BaseModel):
     type: str = Field(pattern=NAME, max_length=63)
     lifecycle: str = Field(pattern=NAME, max_length=63)
     owner: str = Field(max_length=200)
-    dependsOn: list[str] = Field(default_factory=list, max_length=200)
+    dependsOn: list[Annotated[str, Field(max_length=200)]] = Field(
+        default_factory=list, max_length=200)
 
 
 class _Group(BaseModel):
@@ -98,32 +98,6 @@ def pydantic_problems(file: str, prefix: str, exc: ValidationError) -> list[Prob
     return out
 
 
-# Never walk, copy, repr or serialise a whole raw document. YAML aliases are shared objects, so
-# walking one can blow up (a "billion laughs" file); only the validated fields are ever read.
-# Nothing a file contains may raise out of here: every failure becomes a Problem naming the file.
-def _docs(path: Path, rel: str) -> tuple[list[Any], list[Problem]]:
-    def fail(message: str) -> tuple[list[Any], list[Problem]]:
-        return [], [Problem(rel, "(file)", message)]
-
-    try:
-        if path.stat().st_size > MAX_FILE_BYTES:
-            return fail("larger than 1 MiB")
-        return list(yaml.safe_load_all(path.read_text(encoding="utf-8"))), []
-    except UnicodeDecodeError:
-        return fail("not UTF-8")
-    except yaml.MarkedYAMLError as exc:
-        text = str(exc.problem or exc.context or type(exc).__name__)[:200]
-        if exc.problem_mark is None:
-            return fail(f"not valid YAML: {text!r}")
-        return fail(f"not valid YAML at line {exc.problem_mark.line + 1}: {text!r}")
-    except yaml.YAMLError as exc:
-        return fail(f"not valid YAML: {type(exc).__name__}")
-    except (ValueError, RecursionError) as exc:  # e.g. a bad timestamp, or 20,000 nested "["
-        return fail(f"not valid YAML: a value could not be read ({type(exc).__name__})")
-    except OSError as exc:
-        return fail(f"unreadable: {type(exc).__name__}")
-
-
 def read_catalog(root: Path) -> tuple[Catalog, list[Problem]]:
     """Every component and group under root/catalog/, and every problem found on the way.
 
@@ -135,7 +109,7 @@ def read_catalog(root: Path) -> tuple[Catalog, list[Problem]]:
     raw: list[tuple[CatalogComponent, list[tuple[str, str]]]] = []  # (component, (field, ref))
     folder = root / "catalog"
     read_any = False
-    for path in sorted(folder.iterdir()) if folder.is_dir() else []:
+    for path in sorted(folder.iterdir(), key=lambda p: p.name) if folder.is_dir() else []:
         if not path.is_file():
             continue
         rel = path.relative_to(root).as_posix()
@@ -145,7 +119,7 @@ def read_catalog(root: Path) -> tuple[Catalog, list[Problem]]:
         if path.suffix.lower() != ".yaml":
             continue
         read_any = True
-        docs, found = _docs(path, rel)
+        docs, found = read_yaml(path, rel)
         problems += found
         for i, doc in enumerate(docs):
             if doc is None:  # an empty document, from a stray or trailing "---"
