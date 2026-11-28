@@ -27,7 +27,7 @@ from packaging.version import Version
 from thalam_shared.lifecycle import NOT_IN_FLIGHT
 
 VERSION = re.compile(r"([0-9]+)\.([0-9]+)(?:\.([0-9]+))?")
-RANGE_PART = re.compile(r"[ 	]*(==|!=|<=|>=|<|>)[ 	]*([0-9]+(?:\.[0-9]+){0,2})[ 	]*")
+RANGE_PART = re.compile(r"[ \t]*(==|!=|<=|>=|<|>)[ \t]*([0-9]+(?:\.[0-9]+){0,2})[ \t]*")
 
 
 class GraphError(Exception):
