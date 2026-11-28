@@ -501,24 +501,95 @@ def test_the_release_rules_refuse_what_they_should(
     assert any(f == file and field in fld and text in m for f, fld, m in found), found
 
 
-def test_a_broken_catalog_is_the_only_cause_reported(company_tree: Make) -> None:
+CATALOG_SKIPPED = ("releases/", "(folder)", "manifest names were not checked against the "
+                   "catalog: fix the catalog's problems first")
+VERSIONS_SKIPPED = ("jira/search.json", "(file)", "fixVersion ids were not checked against "
+                    "jira/versions.json: fix its problems first")
+
+
+def _found(caught: pytest.ExceptionInfo[LoadError]) -> list[tuple[str, str, str]]:
+    return [(p.file, p.field, p.message) for p in caught.value.problems]
+
+
+def test_a_broken_catalog_is_the_cause_and_one_summary_says_names_were_not_checked(
+        company_tree: Make) -> None:
     root = company_tree(replace={"catalog/team.yaml": (
         "type: service, lifecycle: production, owner: team-a}",
         "type: 'not ok!', lifecycle: production, owner: team-a}")})
     with pytest.raises(LoadError) as caught:
         read_company(root)
-    assert caught.value.problems
-    assert {p.file for p in caught.value.problems} == {"catalog/team.yaml"}
-    assert not any("no component named" in p.message for p in caught.value.problems)
+    found = _found(caught)
+    assert {file for file, _, _ in found} == {"catalog/team.yaml", "releases/"}
+    assert found.count(CATALOG_SKIPPED) == 1  # one summary, however many names were skipped
+    assert not any("no component named" in message for _, _, message in found)
 
 
-def test_a_bad_versions_file_does_not_also_fail_the_items(company_tree: Make) -> None:
+def test_a_bad_versions_file_is_the_cause_and_one_summary_says_ids_were_not_checked(
+        company_tree: Make) -> None:
     root = company_tree(replace={"jira/versions.json": ('{"id": "2", "name": "api 1.1.0"',
                                                         '{"id": "2"')})
     with pytest.raises(LoadError) as caught:
         read_company(root)
-    assert [(p.file, p.field) for p in caught.value.problems] == [
-        ("jira/versions.json", "[1].name")]
+    assert _found(caught) == [
+        ("jira/versions.json", "[1].name", "Field required"), VERSIONS_SKIPPED]
+
+
+def test_a_clean_company_and_unrelated_problems_carry_neither_summary(company_tree: Make) -> None:
+    assert read_company(company_tree()).releases  # nothing was skipped, so nothing is said
+    # A problem in the calendar skips no check: only that one problem is listed.
+    root = company_tree(replace={"calendar.yaml": ("ends: 2027-01-04", "ends: 2026-12-01")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(f, fld) for f, fld, _ in _found(caught)] == [("calendar.yaml", "windows[0]")]
+    # Nor does a catalog problem that leaves every manifest name known (an unknown owner).
+    root = company_tree(replace={
+        "catalog/team.yaml": ("owner: group:team-a", "owner: group:nobody")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(f, fld) for f, fld, _ in _found(caught)] == [
+        ("catalog/team.yaml", "documents[1].spec.owner")]
+    # Nor does a versions problem that leaves every issue's id known (a name with no release).
+    root = company_tree(replace={"jira/versions.json": ('"name": "db-svc 2.0.0"',
+                                                        '"name": "db-svc 9.9.9"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(f, fld) for f, fld, _ in _found(caught)] == [("jira/versions.json", "[2].name")]
+
+
+def test_an_unrelated_bad_owner_and_a_ghost_need_report_the_owner_and_the_summary(
+        company_tree: Make) -> None:
+    root = company_tree(replace={
+        "catalog/team.yaml": ("owner: group:team-a", "owner: group:nobody"),
+        API: ("needs: {db-svc:", "needs: {ghost:")})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    assert [(f, fld) for f, fld, _ in _found(caught)] == [
+        ("catalog/team.yaml", "documents[1].spec.owner"), CATALOG_SKIPPED[:2]]
+
+
+def test_the_summaries_come_with_each_cause_when_both_files_are_broken(company_tree: Make) -> None:
+    root = company_tree(replace={
+        "catalog/team.yaml": ("owner: group:team-a", "owner: group:nobody"),
+        API: ("needs: {db-svc:", "needs: {ghost:"),
+        "jira/versions.json": ('{"id": "2", "name": "api 1.1.0"', '{"id": "2"')})
+    with pytest.raises(LoadError) as caught:
+        read_company(root)
+    found = _found(caught)
+    assert CATALOG_SKIPPED in found and VERSIONS_SKIPPED in found
+    assert len(found) == 4
+
+
+@pytest.mark.parametrize(("name", "old", "new", "field"), [
+    ("releases/api.yaml", "window: [2026-12-01, 2026-12-01]",
+     "window: ['2026-12-01', 2026-12-01]", "releases[1].window[0]"),
+    ("calendar.yaml", "starts: 2026-12-19", "starts: '2026-12-19'", "windows[0].starts"),
+])
+def test_a_quoted_date_says_to_write_it_unquoted(company_tree: Make, name: str, old: str,
+                                                 new: str, field: str) -> None:
+    with pytest.raises(LoadError) as caught:
+        read_company(company_tree(replace={name: (old, new)}))
+    assert _found(caught) == [(name, field, "Input should be a valid date "
+                               "(write the date unquoted, as YYYY-MM-DD)")]
 
 
 def test_a_repeated_key_in_a_manifest_or_a_jira_file_is_a_problem(company_tree: Make) -> None:

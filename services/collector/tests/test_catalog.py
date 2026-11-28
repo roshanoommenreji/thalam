@@ -203,6 +203,14 @@ def test_descriptions_are_flattened_to_one_line_of_plain_text(tmp_path: Path) ->
     assert catalog.components[0].description == "a b c d e f g"
 
 
+def test_a_description_keeps_the_joiner_that_spells_a_malayalam_letter(tmp_path: Path) -> None:
+    # YAML escapes: na, virama, ZWJ (the chillu letter), a space and ma. Flatten keeps them whole.
+    raw = '"\\u0d28\\u0d4d\\u200d \\u0d2e"'
+    catalog, problems = read_catalog(_write(tmp_path, GROUP, _component("api", description=raw)))
+    assert problems == []
+    assert catalog.components[0].description == "\u0d28\u0d4d\u200d \u0d2e"
+
+
 def test_an_empty_description_is_an_empty_string(tmp_path: Path) -> None:
     catalog, problems = read_catalog(_write(tmp_path, GROUP, _component("api", description="")))
     assert problems == []

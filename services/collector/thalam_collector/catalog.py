@@ -95,7 +95,9 @@ def pydantic_problems(file: str, prefix: str, exc: ValidationError) -> list[Prob
         # A key a file invents (an extra field) is part of loc: flatten it, it is printed.
         loc = "".join(f"[{p}]" if isinstance(p, int) else f".{flatten(str(p), 60)}"
                       for p in error["loc"])
-        out.append(Problem(file, (prefix + loc).lstrip(".") or "(file)", error["msg"]))
+        # Dates are read strictly, so a quoted one fails here: say what to change.
+        hint = " (write the date unquoted, as YYYY-MM-DD)" if error["type"] == "date_type" else ""
+        out.append(Problem(file, (prefix + loc).lstrip(".") or "(file)", error["msg"] + hint))
     return out
 
 

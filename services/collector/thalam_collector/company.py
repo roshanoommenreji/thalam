@@ -147,6 +147,25 @@ class Company:
     warnings: tuple[str, ...]
 
 
+@dataclass
+class _Skipped:
+    """The checks that a cause elsewhere made impossible, so that one problem can say so.
+
+    Without it a person who fixes the first problem is surprised by a second batch. Each flag is
+    set only when a check that would have reported a problem was held back, and it is a flag, not
+    a count: a count would only repeat the cause.
+    """
+
+    names: bool = False  # a manifest's names, held back because the catalog has problems
+    versions: bool = False  # an issue's fixVersion ids, held back because versions.json has
+
+
+NAMES_SKIPPED = Problem("releases/", "(folder)", "manifest names were not checked against the "
+                        "catalog: fix the catalog's problems first")
+VERSIONS_SKIPPED = Problem("jira/search.json", "(file)", "fixVersion ids were not checked against "
+                           "jira/versions.json: fix its problems first")
+
+
 class _Failed:
     """What _read returns, instead of a document, when it has already filed the problem."""
 
@@ -233,7 +252,7 @@ def _event(line: str, window: tuple[date, date]) -> Event:
 
 
 def _release(rel: str, where: str, component: str, doc: _Release, known: set[str],
-             catalog_ok: bool, problems: list[Problem]) -> ReleaseRecord:
+             catalog_ok: bool, skipped: _Skipped, problems: list[Problem]) -> ReleaseRecord:
     try:
         if graph.parse_version(doc.version) != doc.version:
             raise ValueError
@@ -248,8 +267,11 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
         field = f"{where}.needs.{flatten(name, 60)}"  # printed, so never the raw key
         if name == component:
             problems.append(Problem(rel, field, "a release cannot need its own component"))
-        elif name not in known and catalog_ok:  # else the catalog's problems are the cause
-            problems.append(Problem(rel, field, _unknown(name, known)))
+        elif name not in known:
+            if catalog_ok:
+                problems.append(Problem(rel, field, _unknown(name, known)))
+            else:  # the catalog's problems are the cause
+                skipped.names = True
         try:
             graph.parse_range(spec)
         except ValueError:  # its own message quotes the whole text, so ours is capped
@@ -281,8 +303,8 @@ def _release(rel: str, where: str, component: str, doc: _Release, known: set[str
     return ReleaseRecord(component, doc.version, tuple(needs), tuple(events), rel)
 
 
-def _releases(root: Path, catalog: Catalog, catalog_ok: bool, problems: list[Problem]
-              ) -> tuple[list[ReleaseRecord], set[str], bool]:
+def _releases(root: Path, catalog: Catalog, catalog_ok: bool, skipped: _Skipped,
+              problems: list[Problem]) -> tuple[list[ReleaseRecord], set[str], bool]:
     """The release records, the components whose manifest failed, and whether no manifest was read.
 
     A failed manifest is one cause: the Jira files must not also complain about its versions.
@@ -318,8 +340,10 @@ def _releases(root: Path, catalog: Catalog, catalog_ok: bool, problems: list[Pro
             failed |= names
             continue
         if manifest.component not in known:
-            if catalog_ok:  # else the catalog's problems are the cause
+            if catalog_ok:
                 problems.append(Problem(rel, "component", _unknown(manifest.component, known)))
+            else:  # the catalog's problems are the cause
+                skipped.names = True
             failed |= names
             continue
         for i, doc in enumerate(manifest.releases):
@@ -330,18 +354,19 @@ def _releases(root: Path, catalog: Catalog, catalog_ok: bool, problems: list[Pro
                 problems.append(Problem(rel, f"{where}.version", f"{label} is defined twice"))
                 continue
             seen.add(key)
-            records.append(
-                _release(rel, where, manifest.component, doc, known, catalog_ok, problems))
+            records.append(_release(rel, where, manifest.component, doc, known, catalog_ok,
+                                    skipped, problems))
     if not read_any:
         problems.append(Problem("releases/", "(folder)", "no release manifests"))
     return records, failed, not read_any
 
 
 def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_read: bool,
-          problems: list[Problem]) -> tuple[list[ReleaseRecord], list[ItemRecord]]:
+          skipped: _Skipped, problems: list[Problem]
+          ) -> tuple[list[ReleaseRecord], list[ItemRecord]]:
     by_label = {f"{r.component} {r.version}": r for r in records}
     ids: dict[str, ReleaseRecord] = {}
-    skipped: set[str] = set()  # Jira ids of versions whose manifest failed: already one problem
+    unmatched: set[str] = set()  # Jira ids of versions whose manifest failed: already one problem
     before = len(problems)
     data = _read(root, "jira/versions.json", problems)
     if isinstance(data, list):
@@ -354,7 +379,7 @@ def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_re
             record = by_label.get(version.name)
             if record is None:
                 if nothing_read or version.name.rpartition(" ")[0] in failed:
-                    skipped.add(version.id)
+                    unmatched.add(version.id)
                     continue
                 problems.append(Problem("jira/versions.json", f"[{i}].name",
                                         f"{shown(version.name)} names no release in the manifests"))
@@ -384,9 +409,13 @@ def _jira(root: Path, records: list[ReleaseRecord], failed: set[str], nothing_re
                     where = f"issues[{i}].fields.fixVersions[{j}]"
                     owner = ids.get(fix.id)
                     if owner is None:
-                        if versions_ok and fix.id not in skipped:
+                        if fix.id in unmatched:  # its manifest failed: already one problem
+                            pass
+                        elif versions_ok:
                             problems.append(Problem("jira/search.json", where,
                                                     f"no Jira version with id {shown(fix.id)}"))
+                        else:  # versions.json's problems are the cause
+                            skipped.versions = True
                         continue
                     if (owner.component, owner.version, issue.key) in listed:
                         label = flatten(f"{owner.component} {owner.version}", 80)
@@ -430,11 +459,21 @@ def _windows(root: Path, problems: list[Problem]) -> list[WindowRecord]:
 
 
 def read_company(root: Path) -> Company:
-    """Every record under root, checked across files; LoadError lists every problem at once."""
+    """Every record under root, checked across files; LoadError lists every problem at once.
+
+    A check that a cause elsewhere made impossible (the catalog's problems hide the manifests'
+    names, versions.json's hide the issues' fixVersion ids) is named by one summary problem, so
+    nothing is skipped without a word.
+    """
     catalog, problems = read_catalog(root)
     catalog_ok = not problems  # else a name missing from the catalog may be the catalog's fault
-    records, failed, nothing_read = _releases(root, catalog, catalog_ok, problems)
-    records, items = _jira(root, records, failed, nothing_read, problems)
+    skipped = _Skipped()
+    records, failed, nothing_read = _releases(root, catalog, catalog_ok, skipped, problems)
+    if skipped.names:
+        problems.append(NAMES_SKIPPED)
+    records, items = _jira(root, records, failed, nothing_read, skipped, problems)
+    if skipped.versions:
+        problems.append(VERSIONS_SKIPPED)
     windows = _windows(root, problems)
     if problems:
         raise LoadError(problems)
